@@ -38,8 +38,7 @@ const WalletPage = () => {
 
     const q = query(
       collection(db, 'fundRequests'),
-      where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc')
+      where('userId', '==', user.uid)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -47,7 +46,17 @@ const WalletPage = () => {
         id: doc.id,
         ...doc.data()
       }));
+
+      // Sort client-side to avoid missing index errors
+      requestsData.sort((a: any, b: any) => {
+        const dateA = a.createdAt?.toDate?.() || new Date(0);
+        const dateB = b.createdAt?.toDate?.() || new Date(0);
+        return dateB.getTime() - dateA.getTime();
+      });
+
       setRequests(requestsData);
+    }, (error) => {
+      console.error("Fund requests fetch error:", error);
     });
 
     return () => unsubscribe();
@@ -151,7 +160,13 @@ const WalletPage = () => {
                     req.status === 'Approved' ? 'bg-emerald-400/10 text-emerald-400' : 
                     req.status === 'Rejected' ? 'bg-rose-400/10 text-rose-400' : 'bg-yellow-400/10 text-yellow-400'
                   }`}>
-                    {req.status === 'Approved' ? <ArrowUpRight className="w-5 h-5" /> : <Info className="w-5 h-5" />}
+                    {req.status === 'Approved' ? (
+                      <ArrowUpRight className="w-5 h-5" />
+                    ) : req.status === 'Pending' ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <X className="w-5 h-5" />
+                    )}
                   </div>
                   <div>
                     <h4 className="font-bold text-sm">₹{req.amount} - {req.status}</h4>

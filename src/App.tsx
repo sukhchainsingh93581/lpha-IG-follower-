@@ -10,9 +10,9 @@ import ProfilePage from './components/ProfilePage';
 import BottomNav from './components/BottomNav';
 import AdminPanel from './components/AdminPanel';
 import { motion, AnimatePresence } from 'motion/react';
-import { Loader2, Coins } from 'lucide-react';
+import { Loader2, Coins, ShieldAlert } from 'lucide-react';
 import { formatCurrency } from './utils';
-import { db } from './firebase';
+import { db, auth } from './firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { useEffect } from 'react';
 
@@ -41,6 +41,26 @@ const AppContent = () => {
 
   if (!user) {
     return <AuthPage />;
+  }
+
+  if (userData?.isBlocked) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-8 text-center space-y-6">
+        <div className="w-24 h-24 bg-rose-500/10 rounded-full flex items-center justify-center">
+          <ShieldAlert className="w-12 h-12 text-rose-500" />
+        </div>
+        <div className="space-y-2">
+          <h1 className="text-3xl font-black text-white">Account Blocked</h1>
+          <p className="text-white/60 font-medium">Your account has been suspended by the administrator. You cannot access the app services at this time.</p>
+        </div>
+        <button 
+          onClick={() => auth.signOut()}
+          className="bg-white text-rose-500 px-8 py-3 rounded-2xl font-black uppercase tracking-widest shadow-xl hover:scale-105 transition-transform"
+        >
+          Sign Out
+        </button>
+      </div>
+    );
   }
 
   if (isAdminView) {

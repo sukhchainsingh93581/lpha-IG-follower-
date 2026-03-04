@@ -17,6 +17,9 @@
   --nav-bg: rgba(255, 255, 255, 0.15);
   --btn-bg: #ffffff;
   --btn-text: #764ba2;
+  --success: #10b981;
+  --danger: #ef4444;
+  --warning: #f59e0b;
 }
 
 [data-theme='dark-pro'] {
@@ -30,6 +33,9 @@
   --nav-bg: rgba(0, 0, 0, 0.8);
   --btn-bg: #00d2ff;
   --btn-text: #000000;
+  --success: #00d2ff;
+  --danger: #ff0000;
+  --warning: #ffff00;
 }
 
 [data-theme='royal-gold'] {
@@ -43,6 +49,9 @@
   --nav-bg: rgba(15, 12, 41, 0.9);
   --btn-bg: #ffd700;
   --btn-text: #000000;
+  --success: #ffd700;
+  --danger: #ff4d4d;
+  --warning: #ffa500;
 }
 
 [data-theme='light-minimal'] {
@@ -57,6 +66,9 @@
   --btn-bg: #06b6d4;
   --btn-text: #ffffff;
   --input-bg: #f8fafc;
+  --success: #10b981;
+  --danger: #ef4444;
+  --warning: #f59e0b;
 }
 
 [data-theme='cyber-neon'] {
@@ -70,6 +82,74 @@
   --nav-bg: rgba(13, 2, 33, 0.95);
   --btn-bg: #00ffff;
   --btn-text: #0d0221;
+  --success: #00ff00;
+  --danger: #ff0000;
+  --warning: #ffff00;
+}
+
+[data-theme='modern-gaming'] {
+  --bg-gradient: linear-gradient(135deg, #0a192f 0%, #112240 100%);
+  --card-bg: #233554;
+  --card-border: #495670;
+  --text-primary: #ffffff;
+  --text-secondary: #ccd6f6;
+  --accent: #4169E1;
+  --accent-glow: rgba(65, 105, 225, 0.4);
+  --nav-bg: rgba(10, 25, 47, 0.9);
+  --btn-bg: #4169E1;
+  --btn-text: #ffffff;
+  --success: #10b981;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+}
+
+[data-theme='black-gold'] {
+  --bg-gradient: linear-gradient(135deg, #121212 0%, #1a1a1a 100%);
+  --card-bg: #2c2c2c;
+  --card-border: #333333;
+  --text-primary: #ffffff;
+  --text-secondary: #a0a0a0;
+  --accent: #d4af37;
+  --accent-glow: rgba(212, 175, 55, 0.4);
+  --nav-bg: rgba(18, 18, 18, 0.9);
+  --btn-bg: #d4af37;
+  --btn-text: #000000;
+  --success: #228b22;
+  --danger: #dc143c;
+  --warning: #ffd700;
+}
+
+[data-theme='clean-ui'] {
+  --bg-gradient: linear-gradient(180deg, #f8f9fa 0%, #e9ecef 100%);
+  --card-bg: #ffffff;
+  --card-border: #dee2e6;
+  --text-primary: #001f3f;
+  --text-secondary: #708090;
+  --accent: #a29bfe;
+  --accent-glow: rgba(162, 155, 254, 0.2);
+  --nav-bg: rgba(248, 249, 250, 0.9);
+  --btn-bg: #6610f2;
+  --btn-text: #ffffff;
+  --input-bg: #f8fafc;
+  --success: #28a745;
+  --danger: #dc3545;
+  --warning: #fd7e14;
+}
+
+[data-theme='neon-cyber'] {
+  --bg-gradient: linear-gradient(135deg, #020c1b 0%, #0a192f 100%);
+  --card-bg: #112240;
+  --card-border: #00f3ff;
+  --text-primary: #ffffff;
+  --text-secondary: #a8f3ff;
+  --accent: #00f3ff;
+  --accent-glow: rgba(0, 243, 255, 0.5);
+  --nav-bg: rgba(2, 12, 27, 0.95);
+  --btn-bg: #00f3ff;
+  --btn-text: #020c1b;
+  --success: #39ff14;
+  --danger: #ff003c;
+  --warning: #ffff00;
 }
 
 body {

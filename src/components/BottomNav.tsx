@@ -12,7 +12,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab }) => {
     { id: 'home', icon: Home, label: 'Home' },
     { id: 'orders', icon: ClipboardList, label: 'Orders' },
     { id: 'wallet', icon: Wallet, label: 'Wallet' },
-    { id: 'notifications', icon: Bell, label: 'Alerts' },
+    { id: 'notifications', icon: Bell, label: 'Notifications' },
     { id: 'profile', icon: User, label: 'Profile' },
   ];
 

@@ -15,18 +15,30 @@ const NotificationsPage = () => {
   useEffect(() => {
     if (!user) return;
 
-    const q = query(
-      collection(db, 'notifications'),
-      where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc')
-    );
+    // Fetch all notifications (we'll filter client-side for global or user-specific)
+    const q = query(collection(db, 'notifications'));
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const notifsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Notification[];
-      setNotifications(notifsData);
+      const notifsData = snapshot.docs
+        .map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as Notification[];
+      
+      // Filter: Global notifications OR notifications for this specific user
+      const filtered = notifsData.filter(n => n.isGlobal || n.userId === user.uid);
+
+      // Sort client-side
+      filtered.sort((a, b) => {
+        const dateA = a.createdAt?.toDate?.() || new Date(0);
+        const dateB = b.createdAt?.toDate?.() || new Date(0);
+        return dateB.getTime() - dateA.getTime();
+      });
+
+      setNotifications(filtered);
+      setLoading(false);
+    }, (error) => {
+      console.error("Notifications fetch error:", error);
       setLoading(false);
     });
 
@@ -61,17 +73,29 @@ const NotificationsPage = () => {
                 key={notif.id}
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
-                className="glass rounded-2xl p-5 flex gap-4 premium-shadow border border-white/5"
+                className="glass rounded-2xl overflow-hidden premium-shadow border border-white/5 flex flex-col"
               >
-                <div className="w-12 h-12 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
-                  <Info className="w-6 h-6 text-white/80" />
-                </div>
-                <div className="flex-1">
-                  <div className="flex justify-between items-start mb-1">
-                    <h3 className="font-bold text-sm">{notif.title}</h3>
-                    <span className="text-[10px] text-white/40 uppercase tracking-widest">{formatDate(notif.createdAt)}</span>
+                {notif.bannerUrl && (
+                  <div className="w-full h-32 overflow-hidden">
+                    <img 
+                      src={notif.bannerUrl} 
+                      alt="Banner" 
+                      className="w-full h-full object-cover" 
+                      referrerPolicy="no-referrer"
+                    />
                   </div>
-                  <p className="text-xs text-white/60 leading-relaxed">{notif.message}</p>
+                )}
+                <div className="p-5 flex gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
+                    <Info className="w-6 h-6 text-white/80" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex justify-between items-start mb-1">
+                      <h3 className="font-bold text-sm">{notif.title}</h3>
+                      <span className="text-[10px] text-white/40 uppercase tracking-widest">{formatDate(notif.createdAt)}</span>
+                    </div>
+                    <p className="text-xs text-white/60 leading-relaxed">{notif.message}</p>
+                  </div>
                 </div>
               </motion.div>
             ))}

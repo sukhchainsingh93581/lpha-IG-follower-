@@ -22,8 +22,14 @@ import {
   Loader2,
   ShoppingCart,
   CreditCard,
+  Bell,
   Copy,
   Check,
+  Pin,
+  PinOff,
+  ShieldAlert,
+  ShieldCheck,
+  UserMinus,
   ExternalLink
 } from 'lucide-react';
 import { formatCurrency } from '../utils';
@@ -33,7 +39,7 @@ interface AdminPanelProps {
   onBack: () => void;
 }
 
-type AdminView = 'dashboard' | 'services' | 'app_management' | 'orders' | 'payments';
+type AdminView = 'dashboard' | 'services' | 'app_management' | 'orders' | 'payments' | 'notifications' | 'user_management';
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   const [view, setView] = useState<AdminView>('dashboard');
@@ -51,7 +57,58 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   const [fundRequests, setFundRequests] = useState<any[]>([]);
   const [paymentFilter, setPaymentFilter] = useState<'active' | 'history'>('active');
   const [services, setServices] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
+  const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [adminNotifications, setAdminNotifications] = useState<any[]>([]);
+  const [notificationForm, setNotificationForm] = useState({
+    title: '',
+    message: '',
+    bannerUrl: '',
+    targetType: 'all' as 'all' | 'specific',
+    selectedUsers: [] as string[]
+  });
   const [loading, setLoading] = useState(true);
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Update current time every second for the countdown timers
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Auto-cleanup history after 12 hours
+  useEffect(() => {
+    const cleanupHistory = async () => {
+      const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
+
+      // Cleanup Orders
+      const expiredOrders = allOrders.filter(o => {
+        if (o.pinned) return false;
+        if (o.status !== 'Completed' && o.status !== 'Cancelled') return false;
+        const processedAt = o.processedAt?.toDate?.() || o.updatedAt?.toDate?.();
+        return processedAt && processedAt < twelveHoursAgo;
+      });
+
+      for (const order of expiredOrders) {
+        await deleteDoc(doc(db, 'orders', order.id));
+      }
+
+      // Cleanup Payments
+      const expiredPayments = fundRequests.filter(r => {
+        if (r.pinned) return false;
+        if (r.status === 'Pending') return false;
+        const processedAt = r.processedAt?.toDate?.() || r.updatedAt?.toDate?.();
+        return processedAt && processedAt < twelveHoursAgo;
+      });
+
+      for (const request of expiredPayments) {
+        await deleteDoc(doc(db, 'fundRequests', request.id));
+      }
+    };
+
+    const interval = setInterval(cleanupHistory, 60000); // Check every minute
+    return () => clearInterval(interval);
+  }, [allOrders, fundRequests]);
   
   // App Management State
   const [appConfig, setAppConfig] = useState({
@@ -99,9 +156,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   };
 
   useEffect(() => {
-    // Real-time Users Count
-    const unsubscribeUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
+    // Real-time Users List
+    const unsubscribeUsersList = onSnapshot(collection(db, 'users'), (snapshot) => {
+      const usersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setUsers(usersData);
       setStats(prev => ({ ...prev, totalUsers: snapshot.size }));
+    });
+
+    // Real-time Notifications
+    const unsubscribeNotifications = onSnapshot(query(collection(db, 'notifications'), orderBy('createdAt', 'desc')), (snapshot) => {
+      const notificationsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setAdminNotifications(notificationsData);
     });
 
     // Real-time Orders & Revenue
@@ -155,7 +220,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     });
 
     return () => {
-      unsubscribeUsers();
+      unsubscribeUsersList();
+      unsubscribeNotifications();
       unsubscribeOrders();
       unsubscribeServices();
       unsubscribeConfig();
@@ -215,6 +281,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
 
       await updateDoc(requestRef, {
         status: newStatus,
+        processedAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
     } catch (error: any) {
@@ -248,6 +315,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
 
       await updateDoc(orderRef, {
         status: newStatus,
+        processedAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
       
@@ -262,6 +330,148 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   const handleCopyLink = (link: string) => {
     navigator.clipboard.writeText(link);
     Swal.fire({ icon: 'success', title: 'Link Copied', toast: true, position: 'top-end', showConfirmButton: false, timer: 2000 });
+  };
+
+  const togglePin = async (type: 'orders' | 'fundRequests', id: string, currentPinned: boolean) => {
+    try {
+      await updateDoc(doc(db, type, id), {
+        pinned: !currentPinned,
+        updatedAt: serverTimestamp()
+      });
+      Swal.fire({ 
+        icon: 'success', 
+        title: !currentPinned ? 'Pinned' : 'Unpinned', 
+        toast: true, 
+        position: 'top-end', 
+        showConfirmButton: false, 
+        timer: 2000 
+      });
+    } catch (error: any) {
+      Swal.fire({ icon: 'error', title: 'Error', text: error.message });
+    }
+  };
+
+  const getCountdown = (processedAt: any) => {
+    if (!processedAt) return null;
+    const date = processedAt.toDate?.() || new Date(processedAt);
+    const expiryDate = new Date(date.getTime() + 12 * 60 * 60 * 1000);
+    const diff = expiryDate.getTime() - currentTime.getTime();
+
+    if (diff <= 0) return "Expiring...";
+
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+    return `${hours}h ${minutes}m ${seconds}s`;
+  };
+
+  const handleSendNotification = async (data: { title: string, message: string, bannerUrl?: string, targetType: 'all' | 'specific', selectedUsers: string[] }) => {
+    try {
+      if (data.targetType === 'all') {
+        await addDoc(collection(db, 'notifications'), {
+          title: data.title,
+          message: data.message,
+          bannerUrl: data.bannerUrl || '',
+          isGlobal: true,
+          createdAt: serverTimestamp()
+        });
+      } else {
+        for (const userId of data.selectedUsers) {
+          await addDoc(collection(db, 'notifications'), {
+            userId,
+            title: data.title,
+            message: data.message,
+            bannerUrl: data.bannerUrl || '',
+            isGlobal: false,
+            createdAt: serverTimestamp()
+          });
+        }
+      }
+      Swal.fire({ icon: 'success', title: 'Notification Sent', toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 });
+    } catch (error: any) {
+      Swal.fire({ icon: 'error', title: 'Error', text: error.message });
+    }
+  };
+
+  const handleDeleteNotification = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'notifications', id));
+      Swal.fire({ icon: 'success', title: 'Notification Deleted', toast: true, position: 'top-end', showConfirmButton: false, timer: 2000 });
+    } catch (error: any) {
+      Swal.fire({ icon: 'error', title: 'Error', text: error.message });
+    }
+  };
+
+  const handleUpdateUserBalance = async (userId: string, currentBalance: number) => {
+    const { value: newBalance } = await Swal.fire({
+      title: 'Update Balance',
+      input: 'number',
+      inputLabel: 'Enter new wallet balance',
+      inputValue: currentBalance,
+      showCancelButton: true,
+      background: 'var(--card-bg)',
+      color: 'var(--text-primary)',
+      confirmButtonColor: 'var(--btn-bg)',
+      inputValidator: (value) => {
+        if (!value) return 'You need to enter a value!';
+        return null;
+      }
+    });
+
+    if (newBalance !== undefined) {
+      try {
+        await updateDoc(doc(db, 'users', userId), {
+          walletBalance: Number(newBalance)
+        });
+        Swal.fire({ icon: 'success', title: 'Updated!', toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 });
+      } catch (error: any) {
+        Swal.fire({ icon: 'error', title: 'Failed', text: error.message });
+      }
+    }
+  };
+
+  const handleToggleUserBlock = async (userId: string, isBlocked: boolean) => {
+    const action = isBlocked ? 'Unblock' : 'Block';
+    const result = await Swal.fire({
+      title: `${action} User?`,
+      text: `Are you sure you want to ${action.toLowerCase()} this user?`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: isBlocked ? '#10b981' : '#f43f5e',
+      confirmButtonText: `Yes, ${action}!`
+    });
+
+    if (result.isConfirmed) {
+      try {
+        await updateDoc(doc(db, 'users', userId), {
+          isBlocked: !isBlocked
+        });
+        Swal.fire({ icon: 'success', title: `${action}ed!`, toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 });
+      } catch (error: any) {
+        Swal.fire({ icon: 'error', title: 'Failed', text: error.message });
+      }
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    const result = await Swal.fire({
+      title: 'Delete User?',
+      text: 'This action is permanent and cannot be undone!',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#f43f5e',
+      confirmButtonText: 'Yes, Delete!'
+    });
+
+    if (result.isConfirmed) {
+      try {
+        await deleteDoc(doc(db, 'users', userId));
+        Swal.fire({ icon: 'success', title: 'Deleted!', toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 });
+      } catch (error: any) {
+        Swal.fire({ icon: 'error', title: 'Failed', text: error.message });
+      }
+    }
   };
 
   const handleSaveConfig = async (e: React.FormEvent) => {
@@ -461,6 +671,24 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                 <CreditCard className="w-5 h-5" />
                 Payments
               </button>
+              <button
+                onClick={() => { setView('notifications'); setIsSidebarOpen(false); }}
+                className={`w-full flex items-center gap-4 p-4 rounded-2xl font-bold transition-all ${
+                  view === 'notifications' ? 'bg-cyan-50 text-cyan-600' : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                <Bell className="w-5 h-5" />
+                Notifications
+              </button>
+              <button
+                onClick={() => { setView('user_management'); setIsSidebarOpen(false); }}
+                className={`w-full flex items-center gap-4 p-4 rounded-2xl font-bold transition-all ${
+                  view === 'user_management' ? 'bg-cyan-50 text-cyan-600' : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                <Users className="w-5 h-5" />
+                User Management
+              </button>
             </nav>
 
             <div className="pt-6 border-t border-slate-100">
@@ -485,7 +713,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                view === 'services' ? 'Services' : 
                view === 'app_management' ? 'App Management' : 
                view === 'orders' ? 'Order Management' :
-               'Payment Management'}
+               view === 'payments' ? 'Payment Management' :
+               view === 'notifications' ? 'Notifications' :
+               'User Management'}
             </h1>
             <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Admin Panel</p>
           </div>
@@ -761,6 +991,20 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                             }`}>
                               {order.status}
                             </span>
+                            {orderFilter === 'history' && (
+                              <div className="flex items-center gap-2 ml-2">
+                                <span className="text-[10px] font-black text-rose-500 bg-rose-50 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                  <Clock className="w-3 h-3" />
+                                  {order.pinned ? 'Pinned' : getCountdown(order.processedAt)}
+                                </span>
+                                <button 
+                                  onClick={() => togglePin('orders', order.id, !!order.pinned)}
+                                  className={`p-1 rounded-lg transition-all ${order.pinned ? 'bg-cyan-500 text-white' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
+                                >
+                                  {order.pinned ? <Pin className="w-3 h-3" /> : <PinOff className="w-3 h-3" />}
+                                </button>
+                              </div>
+                            )}
                           </div>
                           <h3 className="font-black text-slate-800 text-lg">{order.serviceName}</h3>
                           <p className="text-xs text-slate-400 font-bold">Order ID: {order.id}</p>
@@ -861,6 +1105,20 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                             }`}>
                               {request.status}
                             </span>
+                            {paymentFilter === 'history' && (
+                              <div className="flex items-center gap-2 ml-2">
+                                <span className="text-[10px] font-black text-rose-500 bg-rose-50 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                  <Clock className="w-3 h-3" />
+                                  {request.pinned ? 'Pinned' : getCountdown(request.processedAt)}
+                                </span>
+                                <button 
+                                  onClick={() => togglePin('fundRequests', request.id, !!request.pinned)}
+                                  className={`p-1 rounded-lg transition-all ${request.pinned ? 'bg-cyan-500 text-white' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
+                                >
+                                  {request.pinned ? <Pin className="w-3 h-3" /> : <PinOff className="w-3 h-3" />}
+                                </button>
+                              </div>
+                            )}
                           </div>
                           <h3 className="font-black text-slate-800 text-lg">{request.userName || 'Unknown User'}</h3>
                           <p className="text-xs text-slate-500 font-bold">{request.userEmail || 'No Email'}</p>
@@ -909,6 +1167,240 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                           </button>
                         </div>
                       )}
+                    </div>
+                  ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {view === 'notifications' && (
+          <div className="space-y-6">
+            <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-6">
+              <h2 className="text-2xl font-black text-slate-800 tracking-tight">Send Notification</h2>
+              
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Banner Image URL (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="https://example.com/image.jpg"
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700"
+                    value={notificationForm.bannerUrl}
+                    onChange={(e) => setNotificationForm({ ...notificationForm, bannerUrl: e.target.value })}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Title</label>
+                  <input
+                    type="text"
+                    placeholder="Notification Title"
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700"
+                    value={notificationForm.title}
+                    onChange={(e) => setNotificationForm({ ...notificationForm, title: e.target.value })}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Message</label>
+                  <textarea
+                    rows={3}
+                    placeholder="Type your message here..."
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700 resize-none"
+                    value={notificationForm.message}
+                    onChange={(e) => setNotificationForm({ ...notificationForm, message: e.target.value })}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Target Audience</label>
+                  <div className="flex bg-slate-100 p-1 rounded-2xl">
+                    <button 
+                      onClick={() => setNotificationForm({ ...notificationForm, targetType: 'all' })}
+                      className={`flex-1 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${notificationForm.targetType === 'all' ? 'bg-white text-cyan-500 shadow-sm' : 'text-slate-400'}`}
+                    >
+                      All Users
+                    </button>
+                    <button 
+                      onClick={() => setNotificationForm({ ...notificationForm, targetType: 'specific' })}
+                      className={`flex-1 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${notificationForm.targetType === 'specific' ? 'bg-white text-cyan-500 shadow-sm' : 'text-slate-400'}`}
+                    >
+                      Specific Users
+                    </button>
+                  </div>
+                </div>
+
+                {notificationForm.targetType === 'specific' && (
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Select Users ({notificationForm.selectedUsers.length} selected)</label>
+                    <div className="max-h-40 overflow-y-auto bg-slate-50 rounded-2xl p-2 space-y-1 border border-slate-100">
+                      {users.map(u => (
+                        <label key={u.id} className="flex items-center gap-3 p-2 hover:bg-white rounded-xl cursor-pointer transition-colors">
+                          <input
+                            type="checkbox"
+                            className="w-4 h-4 rounded text-cyan-500 focus:ring-cyan-500/20"
+                            checked={notificationForm.selectedUsers.includes(u.id)}
+                            onChange={(e) => {
+                              const selected = e.target.checked 
+                                ? [...notificationForm.selectedUsers, u.id]
+                                : notificationForm.selectedUsers.filter(id => id !== u.id);
+                              setNotificationForm({ ...notificationForm, selectedUsers: selected });
+                            }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-slate-700 truncate">{u.name || 'User'}</p>
+                            <p className="text-[10px] text-slate-400 font-bold truncate">{u.email}</p>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  onClick={() => {
+                    if (!notificationForm.title || !notificationForm.message) {
+                      return Swal.fire({ icon: 'error', title: 'Missing Info', text: 'Title and Message are required.' });
+                    }
+                    if (notificationForm.targetType === 'specific' && notificationForm.selectedUsers.length === 0) {
+                      return Swal.fire({ icon: 'error', title: 'No Users Selected', text: 'Please select at least one user.' });
+                    }
+                    handleSendNotification(notificationForm);
+                    setNotificationForm({ title: '', message: '', bannerUrl: '', targetType: 'all', selectedUsers: [] });
+                  }}
+                  className="w-full bg-cyan-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-cyan-100 hover:scale-[1.02] active:scale-[0.98] transition-all"
+                >
+                  Send Notification
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="text-lg font-black text-slate-800 ml-1">Recent Notifications</h3>
+              {adminNotifications.length === 0 ? (
+                <div className="bg-white p-12 rounded-[2.5rem] border border-dashed border-slate-200 text-center">
+                  <Bell className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+                  <p className="text-slate-400 font-bold">No notifications sent yet.</p>
+                </div>
+              ) : (
+                adminNotifications.map(n => (
+                  <div key={n.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${n.isGlobal ? 'bg-cyan-50 text-cyan-500' : 'bg-slate-50 text-slate-500'}`}>
+                            {n.isGlobal ? 'Global' : 'Specific'}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-bold">
+                            {n.createdAt?.toDate ? n.createdAt.toDate().toLocaleString() : 'Just now'}
+                          </span>
+                        </div>
+                        <h4 className="font-black text-slate-800">{n.title}</h4>
+                        <p className="text-sm text-slate-500 font-medium line-clamp-2">{n.message}</p>
+                      </div>
+                      <button 
+                        onClick={() => handleDeleteNotification(n.id)}
+                        className="p-2 bg-rose-50 text-rose-500 rounded-xl hover:bg-rose-100 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                    {n.bannerUrl && (
+                      <div className="rounded-xl overflow-hidden border border-slate-100">
+                        <img src={n.bannerUrl} alt="Banner" className="w-full h-24 object-cover" referrerPolicy="no-referrer" />
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {view === 'user_management' && (
+          <div className="space-y-6">
+            <div className="flex flex-col gap-4">
+              <h2 className="text-2xl font-black text-slate-800 tracking-tight">User Management</h2>
+              
+              <div className="relative">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search by name or email..."
+                  value={userSearchQuery}
+                  onChange={(e) => setUserSearchQuery(e.target.value)}
+                  className="w-full bg-white border border-slate-100 rounded-2xl py-3 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700 text-sm shadow-sm"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {users
+                .filter(u => {
+                  const search = userSearchQuery.toLowerCase();
+                  return (u.name || '').toLowerCase().includes(search) || (u.email || '').toLowerCase().includes(search);
+                })
+                .length === 0 ? (
+                <div className="bg-white p-12 rounded-[2.5rem] border border-dashed border-slate-200 text-center">
+                  <Users className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+                  <p className="text-slate-400 font-bold">No users found.</p>
+                </div>
+              ) : (
+                users
+                  .filter(u => {
+                    const search = userSearchQuery.toLowerCase();
+                    return (u.name || '').toLowerCase().includes(search) || (u.email || '').toLowerCase().includes(search);
+                  })
+                  .map((u) => (
+                    <div key={u.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center border border-slate-100">
+                            <Users className="w-6 h-6 text-slate-400" />
+                          </div>
+                          <div>
+                            <h3 className="font-black text-slate-800 text-lg">{u.name || 'User'}</h3>
+                            <p className="text-xs text-slate-500 font-bold">{u.email}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${u.isBlocked ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'}`}>
+                                {u.isBlocked ? 'Blocked' : 'Active'}
+                              </span>
+                              <span className="text-[10px] font-black text-slate-400 bg-slate-50 px-2 py-0.5 rounded-full">
+                                ID: {u.id.slice(0, 8)}...
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xl font-black text-slate-800">{formatCurrency(u.walletBalance || 0)}</p>
+                          <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Wallet Balance</p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-3 pt-2">
+                        <button
+                          onClick={() => handleUpdateUserBalance(u.id, u.walletBalance || 0)}
+                          className="flex flex-col items-center justify-center gap-1 p-3 bg-slate-50 text-slate-600 rounded-2xl hover:bg-slate-100 transition-all group"
+                        >
+                          <Edit className="w-4 h-4 group-hover:text-cyan-500" />
+                          <span className="text-[10px] font-black uppercase">Edit</span>
+                        </button>
+                        <button
+                          onClick={() => handleToggleUserBlock(u.id, !!u.isBlocked)}
+                          className={`flex flex-col items-center justify-center gap-1 p-3 rounded-2xl transition-all group ${u.isBlocked ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100' : 'bg-rose-50 text-rose-600 hover:bg-rose-100'}`}
+                        >
+                          {u.isBlocked ? <ShieldCheck className="w-4 h-4" /> : <ShieldAlert className="w-4 h-4" />}
+                          <span className="text-[10px] font-black uppercase">{u.isBlocked ? 'Unblock' : 'Block'}</span>
+                        </button>
+                        <button
+                          onClick={() => handleDeleteUser(u.id)}
+                          className="flex flex-col items-center justify-center gap-1 p-3 bg-slate-50 text-slate-600 rounded-2xl hover:bg-rose-50 hover:text-rose-600 transition-all group"
+                        >
+                          <UserMinus className="w-4 h-4" />
+                          <span className="text-[10px] font-black uppercase">Delete</span>
+                        </button>
+                      </div>
                     </div>
                   ))
               )}

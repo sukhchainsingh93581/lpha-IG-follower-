@@ -39,8 +39,10 @@ export interface Notification {
   id: string;
   title: string;
   message: string;
+  bannerUrl?: string;
+  isGlobal?: boolean;
   createdAt: any;
-  userId: string;
+  userId?: string; // Optional for global notifications
 }
 
-export type ThemeType = 'premium' | 'dark-pro' | 'royal-gold' | 'light-minimal' | 'cyber-neon';
+export type ThemeType = 'premium' | 'dark-pro' | 'royal-gold' | 'light-minimal' | 'cyber-neon' | 'modern-gaming' | 'black-gold' | 'clean-ui' | 'neon-cyber';

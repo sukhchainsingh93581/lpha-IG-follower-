@@ -105,6 +105,10 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onAdminAccess }) => {
     { id: 'royal-gold', label: 'Royal Gold', colors: ['#0f0c29', '#ffd700'] },
     { id: 'light-minimal', label: 'Light Minimal', colors: ['#f0f9ff', '#06b6d4'] },
     { id: 'cyber-neon', label: 'Cyber Neon', colors: ['#0d0221', '#ff00ff'] },
+    { id: 'modern-gaming', label: 'Modern Gaming', colors: ['#0a192f', '#4169E1'] },
+    { id: 'black-gold', label: 'Premium Black & Gold', colors: ['#121212', '#d4af37'] },
+    { id: 'clean-ui', label: 'Light Clean UI', colors: ['#f8f9fa', '#6610f2'] },
+    { id: 'neon-cyber', label: 'Neon Cyber', colors: ['#020c1b', '#00f3ff'] },
   ];
 
   const currentThemeData = themes.find(t => t.id === theme) || themes[0];

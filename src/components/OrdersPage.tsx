@@ -17,8 +17,7 @@ const OrdersPage = () => {
 
     const q = query(
       collection(db, 'orders'),
-      where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc')
+      where('userId', '==', user.uid)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -26,7 +25,18 @@ const OrdersPage = () => {
         id: doc.id,
         ...doc.data()
       })) as Order[];
+      
+      // Sort client-side to avoid missing index errors
+      ordersData.sort((a, b) => {
+        const dateA = a.createdAt?.toDate?.() || new Date(0);
+        const dateB = b.createdAt?.toDate?.() || new Date(0);
+        return dateB.getTime() - dateA.getTime();
+      });
+
       setOrders(ordersData);
+      setLoading(false);
+    }, (error) => {
+      console.error("Orders fetch error:", error);
       setLoading(false);
     });
 
