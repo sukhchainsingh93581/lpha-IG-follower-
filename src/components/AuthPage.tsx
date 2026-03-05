@@ -76,8 +76,8 @@ const AuthPage = () => {
         className="w-full max-w-sm glass rounded-3xl p-8 premium-shadow"
       >
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold mb-2">LuxeServices</h1>
-          <p className="text-white/60">{isLogin ? 'Sign in to your account' : 'Create your premium account'}</p>
+          <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>LuxeServices</h1>
+          <p className="opacity-60" style={{ color: 'var(--text-primary)' }}>{isLogin ? 'Sign in to your account' : 'Create your premium account'}</p>
         </div>
 
         <form onSubmit={handleAuth} className="space-y-4">
@@ -90,23 +90,25 @@ const AuthPage = () => {
                 className="space-y-4"
               >
                 <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 opacity-40" style={{ color: 'var(--text-primary)' }} />
                   <input
                     type="text"
                     placeholder="Full Name"
                     required
                     className="w-full bg-white/10 border border-white/20 rounded-xl py-3 pl-10 pr-4 focus:outline-none focus:border-white/50 transition-colors"
+                    style={{ color: 'var(--text-primary)' }}
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   />
                 </div>
                 <div className="relative">
-                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 opacity-40" style={{ color: 'var(--text-primary)' }} />
                   <input
                     type="tel"
                     placeholder="Phone Number"
                     required
                     className="w-full bg-white/10 border border-white/20 rounded-xl py-3 pl-10 pr-4 focus:outline-none focus:border-white/50 transition-colors"
+                    style={{ color: 'var(--text-primary)' }}
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   />
@@ -116,24 +118,26 @@ const AuthPage = () => {
           </AnimatePresence>
 
           <div className="relative">
-            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
+            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 opacity-40" style={{ color: 'var(--text-primary)' }} />
             <input
               type="email"
               placeholder="Email Address"
               required
               className="w-full bg-white/10 border border-white/20 rounded-xl py-3 pl-10 pr-4 focus:outline-none focus:border-white/50 transition-colors"
+              style={{ color: 'var(--text-primary)' }}
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
             />
           </div>
 
           <div className="relative">
-            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
+            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 opacity-40" style={{ color: 'var(--text-primary)' }} />
             <input
               type="password"
               placeholder="Password"
               required
               className="w-full bg-white/10 border border-white/20 rounded-xl py-3 pl-10 pr-4 focus:outline-none focus:border-white/50 transition-colors"
+              style={{ color: 'var(--text-primary)' }}
               value={formData.password}
               onChange={(e) => setFormData({ ...formData, password: e.target.value })}
             />
@@ -158,7 +162,8 @@ const AuthPage = () => {
         <div className="mt-8 text-center">
           <button
             onClick={() => setIsLogin(!isLogin)}
-            className="text-white/60 hover:text-white transition-colors"
+            className="opacity-60 hover:opacity-100 transition-colors"
+            style={{ color: 'var(--text-primary)' }}
           >
             {isLogin ? "Don't have an account? Register" : 'Already have an account? Login'}
           </button>

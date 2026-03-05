@@ -14,7 +14,7 @@ const WalletPage = () => {
   const [transactionId, setTransactionId] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [requests, setRequests] = useState<any[]>([]);
-  const [appConfig, setAppConfig] = useState({ qrUrl: '', upiId: '' });
+  const [appConfig, setAppConfig] = useState({ qrUrl: '', upiId: '', minPayment: 10, maxPayment: 10000 });
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -66,6 +66,17 @@ const WalletPage = () => {
     e.preventDefault();
     if (!user || !amount || !transactionId.trim()) return;
 
+    const qty = Number(amount);
+    if (isNaN(qty) || qty < (appConfig.minPayment || 10) || qty > (appConfig.maxPayment || 10000)) {
+      return Swal.fire({ 
+        icon: 'error', 
+        title: 'Invalid Amount', 
+        text: `Payment must be between ₹${appConfig.minPayment || 10} and ₹${appConfig.maxPayment || 10000}.`,
+        background: 'var(--card-bg)', 
+        color: 'var(--text-primary)' 
+      });
+    }
+
     setSubmitting(true);
     try {
       await addDoc(collection(db, 'fundRequests'), {
@@ -106,8 +117,8 @@ const WalletPage = () => {
   return (
     <div className="space-y-6">
       <header className="mb-8">
-        <h2 className="text-sm font-medium text-white/60 uppercase tracking-widest mb-1">Manage Your</h2>
-        <h1 className="text-3xl font-bold">Digital Wallet</h1>
+        <h2 className="text-sm font-medium opacity-60 uppercase tracking-widest mb-1" style={{ color: 'var(--text-primary)' }}>Manage Your</h2>
+        <h1 className="text-3xl font-bold" style={{ color: 'var(--text-primary)' }}>Digital Wallet</h1>
       </header>
 
       {/* Premium Wallet Card */}
@@ -143,14 +154,14 @@ const WalletPage = () => {
       {/* Fund Requests / History */}
       <div className="space-y-4">
         <div className="flex items-center gap-2 mb-2">
-          <History className="w-5 h-5 text-white/60" />
-          <h3 className="font-bold text-lg">Payment History</h3>
+          <History className="w-5 h-5 opacity-60" style={{ color: 'var(--text-primary)' }} />
+          <h3 className="font-bold text-lg" style={{ color: 'var(--text-primary)' }}>Payment History</h3>
         </div>
 
         <div className="grid gap-3">
           {requests.length === 0 ? (
             <div className="glass rounded-2xl p-8 text-center">
-              <p className="text-white/40 text-sm italic">No payment requests found.</p>
+              <p className="opacity-40 text-sm italic" style={{ color: 'var(--text-primary)' }}>No payment requests found.</p>
             </div>
           ) : (
             requests.map((req) => (
@@ -169,12 +180,12 @@ const WalletPage = () => {
                     )}
                   </div>
                   <div>
-                    <h4 className="font-bold text-sm">₹{req.amount} - {req.status}</h4>
-                    <p className="text-[10px] text-white/40 uppercase tracking-widest">ID: {req.transactionId}</p>
+                    <h4 className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>₹{req.amount} - {req.status}</h4>
+                    <p className="text-[10px] opacity-40 uppercase tracking-widest" style={{ color: 'var(--text-primary)' }}>ID: {req.transactionId}</p>
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="text-[10px] text-white/40 uppercase tracking-widest">{formatDate(req.createdAt)}</p>
+                  <p className="text-[10px] opacity-40 uppercase tracking-widest" style={{ color: 'var(--text-primary)' }}>{formatDate(req.createdAt)}</p>
                 </div>
               </div>
             ))
@@ -205,13 +216,13 @@ const WalletPage = () => {
               </button>
 
               <div className="text-center mb-8">
-                <h2 className="text-2xl font-bold mb-2">Add Funds</h2>
-                <p className="text-white/50 text-sm">Scan QR and pay, then enter details below</p>
+                <h2 className="text-2xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Add Funds</h2>
+                <p className="opacity-50 text-sm" style={{ color: 'var(--text-primary)' }}>Scan QR and pay, then enter details below</p>
               </div>
 
               {/* QR Code Section */}
               <div className="flex flex-col items-center mb-8">
-                <div className="bg-white p-4 rounded-3xl mb-4">
+                <div className="bg-white p-4 rounded-3xl mb-4 shadow-xl">
                   {appConfig.qrUrl ? (
                     <img 
                       src={appConfig.qrUrl} 
@@ -228,14 +239,15 @@ const WalletPage = () => {
                 
                 {appConfig.upiId && (
                   <div className="w-full mb-6">
-                    <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-2 text-center">Or Pay via UPI ID</p>
+                    <p className="text-[10px] font-black opacity-40 uppercase tracking-widest mb-2 text-center" style={{ color: 'var(--text-primary)' }}>Or Pay via UPI ID</p>
                     <div className="flex items-center gap-2 bg-white/5 border border-white/10 p-3 rounded-2xl">
-                      <div className="flex-1 truncate font-mono text-sm text-white/80 px-2">
+                      <div className="flex-1 truncate font-mono text-sm opacity-80 px-2" style={{ color: 'var(--text-primary)' }}>
                         {appConfig.upiId}
                       </div>
                       <button
                         onClick={handleCopyUPI}
                         className="p-2 bg-white/10 hover:bg-white/20 rounded-xl transition-colors flex items-center gap-2 text-xs font-bold"
+                        style={{ color: 'var(--text-primary)' }}
                       >
                         {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
                         {copied ? 'Copied' : 'Copy'}
@@ -244,7 +256,7 @@ const WalletPage = () => {
                   </div>
                 )}
 
-                <div className="flex items-center gap-2 text-white/60 text-xs bg-white/5 px-4 py-2 rounded-full">
+                <div className="flex items-center gap-2 opacity-60 text-xs bg-white/5 px-4 py-2 rounded-full" style={{ color: 'var(--text-primary)' }}>
                   <QrCode className="w-4 h-4" />
                   <span>Scan to Pay via UPI</span>
                 </div>
@@ -253,7 +265,7 @@ const WalletPage = () => {
               {/* Verification Form */}
               <form onSubmit={handleAddFunds} className="space-y-4">
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-widest text-white/40 ml-1">Amount Paid (₹)</label>
+                  <label className="text-xs font-bold uppercase tracking-widest opacity-40 ml-1" style={{ color: 'var(--text-primary)' }}>Amount Paid (₹)</label>
                   <input
                     type="number"
                     placeholder="Enter amount you paid"
@@ -261,11 +273,13 @@ const WalletPage = () => {
                     value={amount}
                     onChange={(e) => setAmount(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full bg-white/10 border border-white/20 rounded-2xl py-4 px-5 focus:outline-none focus:ring-2 ring-white/20 transition-all"
+                    style={{ color: 'var(--text-primary)' }}
                   />
+                  <p className="text-[10px] opacity-40 ml-1" style={{ color: 'var(--text-primary)' }}>Min: ₹{appConfig.minPayment || 10} - Max: ₹{(appConfig.maxPayment || 10000).toLocaleString()}</p>
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-widest text-white/40 ml-1">Transaction ID (Tnx ID)</label>
+                  <label className="text-xs font-bold uppercase tracking-widest opacity-40 ml-1" style={{ color: 'var(--text-primary)' }}>Transaction ID (Tnx ID)</label>
                   <input
                     type="text"
                     placeholder="Enter payment reference ID"
@@ -273,6 +287,7 @@ const WalletPage = () => {
                     value={transactionId}
                     onChange={(e) => setTransactionId(e.target.value)}
                     className="w-full bg-white/10 border border-white/20 rounded-2xl py-4 px-5 focus:outline-none focus:ring-2 ring-white/20 transition-all"
+                    style={{ color: 'var(--text-primary)' }}
                   />
                 </div>
 

@@ -30,7 +30,9 @@ import {
   ShieldAlert,
   ShieldCheck,
   UserMinus,
-  ExternalLink
+  ExternalLink,
+  Phone,
+  Mail
 } from 'lucide-react';
 import { formatCurrency } from '../utils';
 import Swal from 'sweetalert2';
@@ -114,7 +116,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   const [appConfig, setAppConfig] = useState({
     appName: 'InstaBoost',
     qrUrl: '',
-    upiId: ''
+    upiId: '',
+    minPayment: 10,
+    maxPayment: 10000
   });
   const [savingConfig, setSavingConfig] = useState(false);
 
@@ -822,38 +826,59 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                   <p className="text-slate-400 font-bold">No services created yet.</p>
                 </div>
               ) : (
-                services.map((service) => (
-                  <div key={service.id} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm space-y-4">
-                    <div className="flex items-start justify-between">
-                      <div className="space-y-1">
-                        <span className="bg-cyan-50 text-cyan-600 text-[10px] font-black px-2 py-0.5 rounded-full uppercase">
-                          {service.category}
-                        </span>
-                        <h3 className="font-black text-slate-800 text-lg">{service.name}</h3>
+                Object.entries(
+                  services.reduce((acc, service) => {
+                    if (!acc[service.category]) acc[service.category] = [];
+                    acc[service.category].push(service);
+                    return acc;
+                  }, {} as Record<string, any[]>)
+                ).map(([category, categoryServices]) => (
+                  <div key={category} className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
+                    <div className="bg-slate-50/50 px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-cyan-500 flex items-center justify-center">
+                          <Layers className="w-4 h-4 text-white" />
+                        </div>
+                        <h3 className="font-black text-slate-800 uppercase tracking-widest text-sm">{category}</h3>
                       </div>
-                      <div className="flex gap-2">
-                        <button onClick={() => openEditModal(service)} className="p-2 bg-slate-50 text-slate-400 hover:text-cyan-500 rounded-xl transition-colors">
-                          <Edit className="w-5 h-5" />
-                        </button>
-                        <button onClick={() => handleDeleteService(service.id)} className="p-2 bg-slate-50 text-slate-400 hover:text-rose-500 rounded-xl transition-colors">
-                          <Trash2 className="w-5 h-5" />
-                        </button>
-                      </div>
+                      <span className="text-[10px] font-black text-slate-400 bg-white px-2 py-1 rounded-full border border-slate-100">
+                        {(categoryServices as any[]).length} Services
+                      </span>
                     </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="bg-slate-50 p-2 rounded-xl text-center">
-                    <p className="text-[9px] text-slate-400 font-bold uppercase">Price</p>
-                    <p className="text-xs font-black text-slate-700">{formatCurrency(service.pricePerUnit)}</p>
-                  </div>
-                  <div className="bg-slate-50 p-2 rounded-xl text-center">
-                    <p className="text-[9px] text-slate-400 font-bold uppercase">Min</p>
-                    <p className="text-xs font-black text-slate-700">{service.minQty}</p>
-                  </div>
-                  <div className="bg-slate-50 p-2 rounded-xl text-center">
-                    <p className="text-[9px] text-slate-400 font-bold uppercase">Max</p>
-                    <p className="text-xs font-black text-slate-700">{service.maxQty}</p>
-                  </div>
-                </div>
+                    <div className="p-4 space-y-4">
+                      {(categoryServices as any[]).map((service) => (
+                        <div key={service.id} className="bg-slate-50/30 p-4 rounded-3xl border border-slate-100/50 space-y-3">
+                          <div className="flex items-start justify-between">
+                            <div className="space-y-0.5">
+                              <h4 className="font-black text-slate-800">{service.name}</h4>
+                              <p className="text-[10px] text-slate-400 font-medium line-clamp-1">{service.description}</p>
+                            </div>
+                            <div className="flex gap-1.5">
+                              <button onClick={() => openEditModal(service)} className="p-2 bg-white text-slate-400 hover:text-cyan-500 rounded-xl transition-colors border border-slate-100 shadow-sm">
+                                <Edit className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => handleDeleteService(service.id)} className="p-2 bg-white text-slate-400 hover:text-rose-500 rounded-xl transition-colors border border-slate-100 shadow-sm">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2">
+                            <div className="bg-white p-2 rounded-xl text-center border border-slate-100">
+                              <p className="text-[8px] text-slate-400 font-bold uppercase">Price</p>
+                              <p className="text-[10px] font-black text-slate-700">{formatCurrency(service.pricePerUnit)}</p>
+                            </div>
+                            <div className="bg-white p-2 rounded-xl text-center border border-slate-100">
+                              <p className="text-[8px] text-slate-400 font-bold uppercase">Min</p>
+                              <p className="text-[10px] font-black text-slate-700">{service.minQty}</p>
+                            </div>
+                            <div className="bg-white p-2 rounded-xl text-center border border-slate-100">
+                              <p className="text-[8px] text-slate-400 font-bold uppercase">Max</p>
+                              <p className="text-[10px] font-black text-slate-700">{service.maxQty}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ))
               )}
@@ -897,6 +922,31 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                   value={appConfig.upiId}
                   onChange={(e) => setAppConfig({ ...appConfig, upiId: e.target.value })}
                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Min Payment (₹)</label>
+                  <input
+                    type="number"
+                    required
+                    placeholder="e.g. 10"
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700"
+                    value={appConfig.minPayment}
+                    onChange={(e) => setAppConfig({ ...appConfig, minPayment: parseInt(e.target.value) || 0 })}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Max Payment (₹)</label>
+                  <input
+                    type="number"
+                    required
+                    placeholder="e.g. 10000"
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700"
+                    value={appConfig.maxPayment}
+                    onChange={(e) => setAppConfig({ ...appConfig, maxPayment: parseInt(e.target.value) || 0 })}
+                  />
+                </div>
               </div>
 
               <button
@@ -950,7 +1000,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                 .filter(o => {
                   const search = orderSearchQuery.toLowerCase();
                   if (search) {
-                    return o.status.toLowerCase().includes(search) || o.id.toLowerCase().includes(search);
+                    return (
+                      o.status.toLowerCase().includes(search) || 
+                      o.id.toLowerCase().includes(search) ||
+                      (o.userName && o.userName.toLowerCase().includes(search)) ||
+                      (o.userEmail && o.userEmail.toLowerCase().includes(search))
+                    );
                   }
                   // Default behavior: if no search, show Pending and Processing for active, and others for history
                   if (orderFilter === 'active') {
@@ -968,7 +1023,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                   .filter(o => {
                     const search = orderSearchQuery.toLowerCase();
                     if (search) {
-                      return o.status.toLowerCase().includes(search) || o.id.toLowerCase().includes(search);
+                      return (
+                        o.status.toLowerCase().includes(search) || 
+                        o.id.toLowerCase().includes(search) ||
+                        (o.userName && o.userName.toLowerCase().includes(search)) ||
+                        (o.userEmail && o.userEmail.toLowerCase().includes(search))
+                      );
                     }
                     if (orderFilter === 'active') {
                       return o.status === 'Pending' || o.status === 'Processing';
@@ -978,12 +1038,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                   .map((order) => (
                     <div key={order.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
                       <div className="flex items-start justify-between">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="bg-cyan-50 text-cyan-600 text-[10px] font-black px-2 py-0.5 rounded-full uppercase">
+                        <div className="space-y-1 min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="bg-cyan-50 text-cyan-600 text-[10px] font-black px-2 py-0.5 rounded-full uppercase shrink-0">
                               {order.category}
                             </span>
-                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase shrink-0 ${
                               order.status === 'Completed' ? 'bg-emerald-50 text-emerald-500' :
                               order.status === 'Cancelled' ? 'bg-rose-50 text-rose-500' :
                               order.status === 'Processing' ? 'bg-amber-50 text-amber-500' :
@@ -992,24 +1052,29 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                               {order.status}
                             </span>
                             {orderFilter === 'history' && (
-                              <div className="flex items-center gap-2 ml-2">
-                                <span className="text-[10px] font-black text-rose-500 bg-rose-50 px-2 py-0.5 rounded-full flex items-center gap-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-black text-rose-500 bg-rose-50 px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0">
                                   <Clock className="w-3 h-3" />
                                   {order.pinned ? 'Pinned' : getCountdown(order.processedAt)}
                                 </span>
                                 <button 
                                   onClick={() => togglePin('orders', order.id, !!order.pinned)}
-                                  className={`p-1 rounded-lg transition-all ${order.pinned ? 'bg-cyan-500 text-white' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
+                                  className={`p-1 rounded-lg transition-all shrink-0 ${order.pinned ? 'bg-cyan-500 text-white' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
                                 >
                                   {order.pinned ? <Pin className="w-3 h-3" /> : <PinOff className="w-3 h-3" />}
                                 </button>
                               </div>
                             )}
                           </div>
-                          <h3 className="font-black text-slate-800 text-lg">{order.serviceName}</h3>
-                          <p className="text-xs text-slate-400 font-bold">Order ID: {order.id}</p>
+                          <h3 className="font-black text-slate-800 text-lg truncate">{order.serviceName}</h3>
+                          <div className="flex flex-col gap-0.5">
+                            <p className="text-xs text-slate-400 font-bold truncate">Order ID: {order.id}</p>
+                            {order.userName && (
+                              <p className="text-xs text-cyan-600 font-black truncate">User: {order.userName} ({order.userEmail})</p>
+                            )}
+                          </div>
                         </div>
-                        <div className="text-right">
+                        <div className="text-right shrink-0 ml-4">
                           <p className="text-xl font-black text-slate-800">{formatCurrency(order.totalCost)}</p>
                           <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Total Cost</p>
                         </div>
@@ -1096,9 +1161,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                   .map((request) => (
                     <div key={request.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
                       <div className="flex items-start justify-between">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${
+                        <div className="space-y-1 min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase shrink-0 ${
                               request.status === 'Approved' ? 'bg-emerald-50 text-emerald-500' :
                               request.status === 'Rejected' ? 'bg-rose-50 text-rose-500' :
                               'bg-amber-50 text-amber-500'
@@ -1106,25 +1171,25 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                               {request.status}
                             </span>
                             {paymentFilter === 'history' && (
-                              <div className="flex items-center gap-2 ml-2">
-                                <span className="text-[10px] font-black text-rose-500 bg-rose-50 px-2 py-0.5 rounded-full flex items-center gap-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-black text-rose-500 bg-rose-50 px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0">
                                   <Clock className="w-3 h-3" />
                                   {request.pinned ? 'Pinned' : getCountdown(request.processedAt)}
                                 </span>
                                 <button 
                                   onClick={() => togglePin('fundRequests', request.id, !!request.pinned)}
-                                  className={`p-1 rounded-lg transition-all ${request.pinned ? 'bg-cyan-500 text-white' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
+                                  className={`p-1 rounded-lg transition-all shrink-0 ${request.pinned ? 'bg-cyan-500 text-white' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
                                 >
                                   {request.pinned ? <Pin className="w-3 h-3" /> : <PinOff className="w-3 h-3" />}
                                 </button>
                               </div>
                             )}
                           </div>
-                          <h3 className="font-black text-slate-800 text-lg">{request.userName || 'Unknown User'}</h3>
-                          <p className="text-xs text-slate-500 font-bold">{request.userEmail || 'No Email'}</p>
-                          <p className="text-xs text-slate-400 font-bold">Request ID: {request.id}</p>
+                          <h3 className="font-black text-slate-800 text-lg truncate">{request.userName || 'Unknown User'}</h3>
+                          <p className="text-xs text-slate-500 font-bold truncate">{request.userEmail || 'No Email'}</p>
+                          <p className="text-xs text-slate-400 font-bold truncate">Request ID: {request.id}</p>
                         </div>
-                        <div className="text-right">
+                        <div className="text-right shrink-0 ml-4">
                           <p className="text-xl font-black text-slate-800">{formatCurrency(request.amount)}</p>
                           <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Requested Amount</p>
                         </div>
@@ -1308,7 +1373,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                     </div>
                     {n.bannerUrl && (
                       <div className="rounded-xl overflow-hidden border border-slate-100">
-                        <img src={n.bannerUrl} alt="Banner" className="w-full h-24 object-cover" referrerPolicy="no-referrer" />
+                        <img src={n.bannerUrl} alt="Banner" className="w-full h-auto block" referrerPolicy="no-referrer" />
                       </div>
                     )}
                   </div>
@@ -1355,13 +1420,24 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                   .map((u) => (
                     <div key={u.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
                       <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-4 min-w-0 flex-1">
                           <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center border border-slate-100">
                             <Users className="w-6 h-6 text-slate-400" />
                           </div>
-                          <div>
-                            <h3 className="font-black text-slate-800 text-lg">{u.name || 'User'}</h3>
-                            <p className="text-xs text-slate-500 font-bold">{u.email}</p>
+                          <div className="min-w-0 flex-1">
+                            <h3 className="font-black text-slate-800 text-lg truncate">{u.name || 'User'}</h3>
+                            <div className="space-y-0.5">
+                              <p className="text-xs text-slate-500 font-bold flex items-center gap-1.5">
+                                <Mail className="w-3 h-3 opacity-40 shrink-0" />
+                                <span className="truncate">{u.email}</span>
+                              </p>
+                              {u.phone && (
+                                <p className="text-xs text-slate-500 font-bold flex items-center gap-1.5">
+                                  <Phone className="w-3 h-3 opacity-40 shrink-0" />
+                                  <span className="truncate">{u.phone}</span>
+                                </p>
+                              )}
+                            </div>
                             <div className="flex items-center gap-2 mt-1">
                               <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${u.isBlocked ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'}`}>
                                 {u.isBlocked ? 'Blocked' : 'Active'}
@@ -1372,7 +1448,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                             </div>
                           </div>
                         </div>
-                        <div className="text-right">
+                        <div className="text-right shrink-0 ml-4">
                           <p className="text-xl font-black text-slate-800">{formatCurrency(u.walletBalance || 0)}</p>
                           <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Wallet Balance</p>
                         </div>

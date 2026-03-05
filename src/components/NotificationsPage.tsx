@@ -56,14 +56,14 @@ const NotificationsPage = () => {
   return (
     <div className="space-y-6">
       <header className="mb-8">
-        <h2 className="text-sm font-medium text-white/60 uppercase tracking-widest mb-1">Stay Updated</h2>
-        <h1 className="text-3xl font-bold">Notifications</h1>
+        <h2 className="text-sm font-medium opacity-60 uppercase tracking-widest mb-1" style={{ color: 'var(--text-primary)' }}>Stay Updated</h2>
+        <h1 className="text-3xl font-bold" style={{ color: 'var(--text-primary)' }}>Notifications</h1>
       </header>
 
       {notifications.length === 0 ? (
         <div className="glass rounded-3xl p-12 text-center">
-          <Bell className="w-12 h-12 mx-auto mb-4 text-white/20" />
-          <p className="text-white/60">No new notifications.</p>
+          <Bell className="w-12 h-12 mx-auto mb-4 opacity-20" style={{ color: 'var(--text-primary)' }} />
+          <p className="opacity-60" style={{ color: 'var(--text-primary)' }}>No new notifications.</p>
         </div>
       ) : (
         <div className="grid gap-4">
@@ -76,25 +76,25 @@ const NotificationsPage = () => {
                 className="glass rounded-2xl overflow-hidden premium-shadow border border-white/5 flex flex-col"
               >
                 {notif.bannerUrl && (
-                  <div className="w-full h-32 overflow-hidden">
+                  <div className="w-full overflow-hidden border-b border-white/5">
                     <img 
                       src={notif.bannerUrl} 
                       alt="Banner" 
-                      className="w-full h-full object-cover" 
+                      className="w-full h-auto block" 
                       referrerPolicy="no-referrer"
                     />
                   </div>
                 )}
                 <div className="p-5 flex gap-4">
                   <div className="w-12 h-12 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
-                    <Info className="w-6 h-6 text-white/80" />
+                    <Info className="w-6 h-6 opacity-80" style={{ color: 'var(--text-primary)' }} />
                   </div>
                   <div className="flex-1">
                     <div className="flex justify-between items-start mb-1">
-                      <h3 className="font-bold text-sm">{notif.title}</h3>
-                      <span className="text-[10px] text-white/40 uppercase tracking-widest">{formatDate(notif.createdAt)}</span>
+                      <h3 className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>{notif.title}</h3>
+                      <span className="text-[10px] opacity-40 uppercase tracking-widest" style={{ color: 'var(--text-primary)' }}>{formatDate(notif.createdAt)}</span>
                     </div>
-                    <p className="text-xs text-white/60 leading-relaxed">{notif.message}</p>
+                    <p className="text-xs opacity-60 leading-relaxed" style={{ color: 'var(--text-primary)' }}>{notif.message}</p>
                   </div>
                 </div>
               </motion.div>

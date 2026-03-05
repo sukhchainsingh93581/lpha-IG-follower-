@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { auth, db } from '../firebase';
 import { signOut } from 'firebase/auth';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -19,9 +19,15 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onAdminAccess }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [showThemeModal, setShowThemeModal] = useState(false);
   const [formData, setFormData] = useState({
-    name: userData?.name || '',
-    phone: userData?.phone || ''
+    name: '',
   });
+
+  // Sync name with userData when it changes
+  useEffect(() => {
+    if (userData?.name) {
+      setFormData({ name: userData.name });
+    }
+  }, [userData]);
 
   const handleAdminAccess = async () => {
     const { value: password } = await Swal.fire({
@@ -40,7 +46,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onAdminAccess }) => {
       cancelButtonColor: 'rgba(255,255,255,0.1)'
     });
 
-    if (password === '9358197207') {
+    if (password === 'Admin93581') {
       onAdminAccess?.();
     } else if (password) {
       Swal.fire({
@@ -72,15 +78,25 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onAdminAccess }) => {
 
   const handleUpdateProfile = async () => {
     if (!user) return;
+    if (!formData.name.trim()) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Invalid Name',
+        text: 'Name cannot be empty.',
+        background: 'var(--card-bg)',
+        color: 'var(--text-primary)'
+      });
+      return;
+    }
+
     try {
       await updateDoc(doc(db, 'users', user.uid), {
         name: formData.name,
-        phone: formData.phone
       });
       setIsEditing(false);
       Swal.fire({
         icon: 'success',
-        title: 'Profile Updated',
+        title: 'Name Updated',
         toast: true,
         position: 'top-end',
         showConfirmButton: false,
@@ -116,8 +132,8 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onAdminAccess }) => {
   return (
     <div className="space-y-8">
       <header className="mb-8">
-        <h2 className="text-sm font-medium text-white/60 uppercase tracking-widest mb-1">Manage Your</h2>
-        <h1 className="text-3xl font-bold">Premium Profile</h1>
+        <h2 className="text-sm font-medium opacity-60 uppercase tracking-widest mb-1" style={{ color: 'var(--text-primary)' }}>Manage Your</h2>
+        <h1 className="text-3xl font-bold" style={{ color: 'var(--text-primary)' }}>Premium Profile</h1>
       </header>
 
       {/* Profile Card */}
@@ -155,42 +171,34 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onAdminAccess }) => {
 
         <div className="space-y-4">
           <div>
-            <p className="text-[10px] text-white/40 uppercase tracking-widest mb-1">Full Name</p>
+            <p className="text-[10px] opacity-40 uppercase tracking-widest mb-1" style={{ color: 'var(--text-primary)' }}>Full Name</p>
             {isEditing ? (
               <input
                 type="text"
                 className="w-full bg-white/10 border border-white/20 rounded-xl py-2 px-4 focus:outline-none"
+                style={{ color: 'var(--text-primary)' }}
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               />
             ) : (
-              <p className="text-xl font-bold">{userData?.name}</p>
+              <p className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{userData?.name}</p>
             )}
           </div>
           
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <p className="text-[10px] text-white/40 uppercase tracking-widest mb-1">Email</p>
-              <div className="flex items-center gap-2 text-white/80">
+              <p className="text-[10px] opacity-40 uppercase tracking-widest mb-1" style={{ color: 'var(--text-primary)' }}>Email</p>
+              <div className="flex items-center gap-2 opacity-80" style={{ color: 'var(--text-primary)' }}>
                 <Mail className="w-4 h-4" />
                 <p className="text-sm font-medium truncate">{userData?.email}</p>
               </div>
             </div>
             <div>
-              <p className="text-[10px] text-white/40 uppercase tracking-widest mb-1">Phone</p>
-              {isEditing ? (
-                <input
-                  type="tel"
-                  className="w-full bg-white/10 border border-white/20 rounded-xl py-2 px-4 focus:outline-none"
-                  value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                />
-              ) : (
-                <div className="flex items-center gap-2 text-white/80">
-                  <Phone className="w-4 h-4" />
-                  <p className="text-sm font-medium">{userData?.phone}</p>
-                </div>
-              )}
+              <p className="text-[10px] opacity-40 uppercase tracking-widest mb-1" style={{ color: 'var(--text-primary)' }}>Phone</p>
+              <div className="flex items-center gap-2 opacity-80" style={{ color: 'var(--text-primary)' }}>
+                <Phone className="w-4 h-4" />
+                <p className="text-sm font-medium">{userData?.phone}</p>
+              </div>
             </div>
           </div>
         </div>
@@ -199,8 +207,8 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onAdminAccess }) => {
       {/* Theme Selector Box */}
       <div className="space-y-4">
         <div className="flex items-center gap-2 mb-2">
-          <Palette className="w-5 h-5 text-white/60" />
-          <h3 className="font-bold text-lg">App Customization</h3>
+          <Palette className="w-5 h-5 opacity-60" style={{ color: 'var(--text-primary)' }} />
+          <h3 className="font-bold text-lg" style={{ color: 'var(--text-primary)' }}>App Customization</h3>
         </div>
 
         <button
@@ -209,20 +217,20 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onAdminAccess }) => {
         >
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center border border-white/10">
-              <Palette className="w-6 h-6 text-white/80" />
+              <Palette className="w-6 h-6 opacity-80" style={{ color: 'var(--text-primary)' }} />
             </div>
             <div className="text-left">
-              <p className="text-[10px] text-white/40 uppercase tracking-widest mb-0.5">Current Theme</p>
+              <p className="text-[10px] opacity-40 uppercase tracking-widest mb-0.5" style={{ color: 'var(--text-primary)' }}>Current Theme</p>
               <div className="flex items-center gap-2">
                 <div className="flex -space-x-1.5">
                   <div className="w-4 h-4 rounded-full border border-white/20" style={{ backgroundColor: currentThemeData.colors[0] }} />
                   <div className="w-4 h-4 rounded-full border border-white/20" style={{ backgroundColor: currentThemeData.colors[1] }} />
                 </div>
-                <span className="font-bold text-lg">{currentThemeData.label}</span>
+                <span className="font-bold text-lg" style={{ color: 'var(--text-primary)' }}>{currentThemeData.label}</span>
               </div>
             </div>
           </div>
-          <ChevronRight className="w-6 h-6 text-white/20 group-hover:text-white/60 transition-colors" />
+          <ChevronRight className="w-6 h-6 opacity-20 group-hover:opacity-60 transition-colors" style={{ color: 'var(--text-primary)' }} />
         </button>
       </div>
 
@@ -270,7 +278,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onAdminAccess }) => {
                         <div className="w-6 h-6 rounded-full border border-white/20" style={{ backgroundColor: t.colors[0] }} />
                         <div className="w-6 h-6 rounded-full border border-white/20" style={{ backgroundColor: t.colors[1] }} />
                       </div>
-                      <span className={`text-sm font-bold ${theme === t.id ? 'text-white' : 'text-white/60'}`}>
+                      <span className={`text-sm font-bold ${theme === t.id ? 'text-white' : 'opacity-60'}`} style={theme === t.id ? {} : { color: 'var(--text-primary)' }}>
                         {t.label}
                       </span>
                     </div>

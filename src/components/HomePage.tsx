@@ -111,6 +111,8 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
         const orderRef = doc(collection(db, 'orders'));
         transaction.set(orderRef, {
           userId: user.uid,
+          userName: userData.name || 'Anonymous',
+          userEmail: user.email || '',
           serviceId: selectedService.id,
           serviceName: selectedService.name,
           category: selectedCategory,
@@ -174,13 +176,14 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
           placeholder="Search for a service..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full bg-white border border-slate-100 rounded-2xl py-4 pl-14 pr-5 focus:outline-none focus:ring-2 ring-cyan-100 transition-all shadow-sm text-slate-600"
+          className="w-full glass rounded-2xl py-4 pl-14 pr-5 focus:outline-none focus:ring-2 ring-cyan-100 transition-all shadow-sm"
+          style={{ color: 'var(--text-primary)' }}
         />
       </div>
 
       {/* Category Selection */}
       <div className="space-y-2">
-        <label className="text-sm font-bold text-slate-700 ml-1">Category</label>
+        <label className="text-sm font-bold opacity-80 ml-1" style={{ color: 'var(--text-primary)' }}>Category</label>
         <div className="relative">
           <select
             value={selectedCategory}
@@ -188,7 +191,8 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
               setSelectedCategory(e.target.value);
               setSelectedServiceId('');
             }}
-            className="w-full bg-white border border-slate-200 rounded-2xl py-4 px-5 appearance-none focus:outline-none focus:ring-2 ring-cyan-100 transition-all cursor-pointer text-slate-700 font-medium shadow-sm"
+            className="w-full glass rounded-2xl py-4 px-5 appearance-none focus:outline-none focus:ring-2 ring-cyan-100 transition-all cursor-pointer font-medium shadow-sm"
+            style={{ color: 'var(--text-primary)' }}
           >
             <option value="">Select Category</option>
             {categories.map((cat) => (
@@ -201,18 +205,19 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
 
       {/* Service Selection */}
       <div className="space-y-2">
-        <label className="text-sm font-bold text-slate-700 ml-1">Service</label>
+        <label className="text-sm font-bold opacity-80 ml-1" style={{ color: 'var(--text-primary)' }}>Service</label>
         <div className="relative">
           <select
             value={selectedServiceId}
             disabled={!selectedCategory}
             onChange={(e) => setSelectedServiceId(e.target.value)}
-            className={`w-full bg-white border border-slate-200 rounded-2xl py-4 px-5 appearance-none focus:outline-none focus:ring-2 ring-cyan-100 transition-all text-slate-700 font-medium shadow-sm ${!selectedCategory ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+            className={`w-full glass rounded-2xl py-4 px-5 appearance-none focus:outline-none focus:ring-2 ring-cyan-100 transition-all font-medium shadow-sm ${!selectedCategory ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+            style={{ color: 'var(--text-primary)' }}
           >
             <option value="">{selectedCategory ? 'Choose a service...' : 'Select category first'}</option>
             {filteredServices.map((service) => (
               <option key={service.id} value={service.id}>
-                {service.emoji} {service.name} - ₹{service.pricePerUnit}
+                {service.emoji} {service.name}
               </option>
             ))}
           </select>
@@ -227,25 +232,25 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 10 }}
-            className="bg-white border border-slate-100 rounded-3xl p-6 space-y-4 shadow-sm"
+            className="glass rounded-3xl p-6 space-y-4 shadow-sm"
           >
             <div className="flex items-start gap-4">
               <div className="w-14 h-14 rounded-2xl bg-cyan-50 flex items-center justify-center shrink-0">
                 <User className="w-8 h-8 text-cyan-500" />
               </div>
               <div className="flex-1">
-                <h3 className="font-bold text-slate-800 text-lg leading-tight">{selectedService.emoji} {selectedService.name}</h3>
+                <h3 className="font-bold text-lg leading-tight" style={{ color: 'var(--text-primary)' }}>{selectedService.emoji} {selectedService.name}</h3>
                 <p className="text-cyan-600 font-black text-lg mt-1">₹{selectedService.pricePerUnit} per unit</p>
-                <p className="text-xs text-slate-400 mt-1">Min: {selectedService.minQty} - Max: {selectedService.maxQty.toLocaleString()}</p>
+                <p className="text-xs opacity-40 mt-1" style={{ color: 'var(--text-primary)' }}>Min: {selectedService.minQty} - Max: {selectedService.maxQty.toLocaleString()}</p>
               </div>
             </div>
             
-            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+            <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
               <div className="flex items-center gap-2 mb-2">
-                <Info className="w-4 h-4 text-slate-400" />
-                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Service Description</span>
+                <Info className="w-4 h-4 opacity-40" style={{ color: 'var(--text-primary)' }} />
+                <span className="text-[10px] font-bold uppercase tracking-widest opacity-40" style={{ color: 'var(--text-primary)' }}>Service Description</span>
               </div>
-              <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{selectedService.description}</p>
+              <p className="text-sm opacity-80 leading-relaxed whitespace-pre-line" style={{ color: 'var(--text-primary)' }}>{selectedService.description}</p>
             </div>
           </motion.div>
         )}
@@ -253,35 +258,37 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
 
       {/* Link Input */}
       <div className="space-y-2">
-        <label className="text-sm font-bold text-slate-700 ml-1">Link</label>
+        <label className="text-sm font-bold opacity-80 ml-1" style={{ color: 'var(--text-primary)' }}>Link</label>
         <input
           type="url"
           placeholder="Enter Instagram Link"
           value={link}
           onChange={(e) => setLink(e.target.value)}
-          className="w-full bg-cyan-50/50 border border-cyan-100 rounded-2xl py-4 px-6 focus:outline-none focus:ring-2 ring-cyan-200 transition-all text-slate-700"
+          className="w-full glass rounded-2xl py-4 px-6 focus:outline-none focus:ring-2 ring-cyan-200 transition-all"
+          style={{ color: 'var(--text-primary)' }}
         />
       </div>
 
       {/* Quantity Input */}
       <div className="space-y-2">
-        <label className="text-sm font-bold text-slate-700 ml-1">Quantity</label>
+        <label className="text-sm font-bold opacity-80 ml-1" style={{ color: 'var(--text-primary)' }}>Quantity</label>
         <input
           type="number"
           placeholder="Enter Quantity"
           value={quantity}
           onChange={(e) => setQuantity(e.target.value === '' ? '' : Number(e.target.value))}
-          className="w-full bg-cyan-50/50 border border-cyan-100 rounded-2xl py-4 px-6 focus:outline-none focus:ring-2 ring-cyan-200 transition-all text-slate-700"
+          className="w-full glass rounded-2xl py-4 px-6 focus:outline-none focus:ring-2 ring-cyan-200 transition-all"
+          style={{ color: 'var(--text-primary)' }}
         />
         {selectedService && (
-          <p className="text-[10px] text-slate-400 ml-1">Min: {selectedService.minQty} - Max: {selectedService.maxQty.toLocaleString()}</p>
+          <p className="text-[10px] opacity-40 ml-1" style={{ color: 'var(--text-primary)' }}>Min: {selectedService.minQty} - Max: {selectedService.maxQty.toLocaleString()}</p>
         )}
       </div>
 
       {/* Charge Display */}
       <div className="space-y-2">
-        <label className="text-sm font-bold text-slate-700 ml-1">Charge</label>
-        <div className="w-full bg-cyan-50/50 border border-cyan-100 rounded-2xl py-4 px-6 font-bold text-xl text-cyan-600">
+        <label className="text-sm font-bold opacity-80 ml-1" style={{ color: 'var(--text-primary)' }}>Charge</label>
+        <div className="w-full glass rounded-2xl py-4 px-6 font-bold text-xl text-cyan-400">
           ₹{totalCost.toFixed(2)}
         </div>
       </div>
