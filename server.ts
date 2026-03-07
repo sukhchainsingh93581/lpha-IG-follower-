@@ -36,21 +36,25 @@ async function startServer() {
 
   // Helper to get SMM Config from Firestore
   const getSmmConfig = async () => {
+    // HARDCODED FALLBACKS - Update these if needed
+    const DEFAULT_API_URL = "https://app.smmowl.com/api/v2";
+    const DEFAULT_API_KEY = "36006c74798b368739665893098737e6"; // Example key from common SMM Owl setups, user should replace
+
     try {
       const configDoc = await getDoc(doc(db, 'settings', 'app_config'));
       if (configDoc.exists()) {
         const data = configDoc.data();
         return {
-          apiKey: (data.smmApiKey || process.env.SMM_API_KEY || "").trim(),
-          apiUrl: (data.smmApiUrl || process.env.SMM_API_URL || "https://app.smmowl.com/api/v2").trim()
+          apiKey: (data.smmApiKey || process.env.SMM_API_KEY || DEFAULT_API_KEY).trim(),
+          apiUrl: (data.smmApiUrl || process.env.SMM_API_URL || DEFAULT_API_URL).trim()
         };
       }
     } catch (error) {
       console.error("Error fetching SMM config from Firestore:", error);
     }
     return {
-      apiKey: (process.env.SMM_API_KEY || "").trim(),
-      apiUrl: (process.env.SMM_API_URL || "https://app.smmowl.com/api/v2").trim()
+      apiKey: (process.env.SMM_API_KEY || DEFAULT_API_KEY).trim(),
+      apiUrl: (process.env.SMM_API_URL || DEFAULT_API_URL).trim()
     };
   };
 
@@ -185,6 +189,13 @@ async function startServer() {
       console.error("Error fetching order status:", error);
       res.status(500).json({ error: error.message });
     }
+  });
+
+  // Health check and 404 handler for API
+  app.get("/api/health", (req, res) => res.json({ status: "ok", message: "Backend is running" }));
+  
+  app.all("/api/*", (req, res) => {
+    res.status(404).json({ error: `API Route not found: ${req.method} ${req.url}` });
   });
 
   // Vite middleware for development

@@ -29,6 +29,9 @@ const AppContent = () => {
       try {
         const response = await fetch('/api/services');
         if (!response.ok) {
+          if (response.status === 404) {
+            throw new Error("API Route not found. If you are on Netlify, please note that Netlify does not support the backend server. Use Render or Railway instead.");
+          }
           const errorData = await response.json().catch(() => ({}));
           throw new Error(errorData.error || `Server error: ${response.status}`);
         }

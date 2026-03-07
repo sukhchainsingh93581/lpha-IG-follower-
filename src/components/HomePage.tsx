@@ -117,6 +117,9 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
       });
 
       if (!apiResponse.ok) {
+        if (apiResponse.status === 404) {
+          throw new Error("API Route not found. If you are on Netlify, please note that Netlify does not support the backend server. Use Render or Railway instead.");
+        }
         const errorData = await apiResponse.json().catch(() => ({}));
         throw new Error(errorData.error || `Server error: ${apiResponse.status}`);
       }
