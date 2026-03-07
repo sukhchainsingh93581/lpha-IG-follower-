@@ -34,16 +34,16 @@ async function startServer() {
       if (configDoc.exists()) {
         const data = configDoc.data();
         return {
-          apiKey: data.smmApiKey || process.env.SMM_API_KEY || "",
-          apiUrl: data.smmApiUrl || process.env.SMM_API_URL || "https://app.smmowl.com/api/v2"
+          apiKey: (data.smmApiKey || process.env.SMM_API_KEY || "").trim(),
+          apiUrl: (data.smmApiUrl || process.env.SMM_API_URL || "https://app.smmowl.com/api/v2").trim()
         };
       }
     } catch (error) {
       console.error("Error fetching SMM config from Firestore:", error);
     }
     return {
-      apiKey: process.env.SMM_API_KEY || "",
-      apiUrl: process.env.SMM_API_URL || "https://app.smmowl.com/api/v2"
+      apiKey: (process.env.SMM_API_KEY || "").trim(),
+      apiUrl: (process.env.SMM_API_URL || "https://app.smmowl.com/api/v2").trim()
     };
   };
 
@@ -60,6 +60,10 @@ async function startServer() {
 
       const response = await fetch(apiUrl, {
         method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "SMM-Reseller-App/1.0"
+        },
         body: params,
       });
       
@@ -97,12 +101,16 @@ async function startServer() {
       const params = new URLSearchParams();
       params.append('key', apiKey);
       params.append('action', 'add');
-      params.append('service', service);
-      params.append('link', link);
-      params.append('quantity', quantity);
+      params.append('service', String(service));
+      params.append('link', String(link));
+      params.append('quantity', String(quantity));
 
       const response = await fetch(apiUrl, {
         method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "SMM-Reseller-App/1.0"
+        },
         body: params,
       });
 
@@ -140,10 +148,14 @@ async function startServer() {
       const params = new URLSearchParams();
       params.append('key', apiKey);
       params.append('action', 'status');
-      params.append('order', id);
+      params.append('order', String(id));
 
       const response = await fetch(apiUrl, {
         method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "SMM-Reseller-App/1.0"
+        },
         body: params,
       });
 
