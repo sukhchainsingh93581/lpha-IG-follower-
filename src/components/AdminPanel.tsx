@@ -1049,6 +1049,29 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                 </div>
               </div>
 
+              <div className="space-y-4 pt-4 border-t border-slate-100">
+                <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">SMM API Settings</h3>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">SMM API URL</label>
+                  <input
+                    placeholder="https://app.smmowl.com/api/v2"
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700"
+                    value={appConfig.smmApiUrl || ''}
+                    onChange={(e) => setAppConfig({ ...appConfig, smmApiUrl: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">SMM API Key</label>
+                  <input
+                    type="password"
+                    placeholder="Enter your SMM API Key"
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700"
+                    value={appConfig.smmApiKey || ''}
+                    onChange={(e) => setAppConfig({ ...appConfig, smmApiKey: e.target.value })}
+                  />
+                </div>
+              </div>
+
               <button
                 type="submit"
                 disabled={savingConfig}

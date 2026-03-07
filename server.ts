@@ -2,8 +2,24 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import fetch from "node-fetch";
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, getDoc } from "firebase/firestore";
 
 dotenv.config();
+
+// Firebase Config for Server
+const firebaseConfig = {
+  apiKey: "AIzaSyCYDiFOX0UOCqTKfSUzbmSpuRcLP63z-3o",
+  authDomain: "followers-69c83.firebaseapp.com",
+  databaseURL: "https://followers-69c83-default-rtdb.firebaseio.com",
+  projectId: "followers-69c83",
+  storageBucket: "followers-69c83.firebasestorage.app",
+  messagingSenderId: "299874289642",
+  appId: "1:299874289642:web:022c05f049baab1c355493"
+};
+
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp);
 
 async function startServer() {
   const app = express();
@@ -11,86 +27,124 @@ async function startServer() {
 
   app.use(express.json());
 
-  const API_KEY = process.env.SMM_API_KEY || "";
-  const API_URL = process.env.SMM_API_URL || "https://app.smmowl.com/api/v2";
+  // Helper to get SMM Config from Firestore
+  const getSmmConfig = async () => {
+    try {
+      const configDoc = await getDoc(doc(db, 'settings', 'app_config'));
+      if (configDoc.exists()) {
+        const data = configDoc.data();
+        return {
+          apiKey: data.smmApiKey || process.env.SMM_API_KEY || "",
+          apiUrl: data.smmApiUrl || process.env.SMM_API_URL || "https://app.smmowl.com/api/v2"
+        };
+      }
+    } catch (error) {
+      console.error("Error fetching SMM config from Firestore:", error);
+    }
+    return {
+      apiKey: process.env.SMM_API_KEY || "",
+      apiUrl: process.env.SMM_API_URL || "https://app.smmowl.com/api/v2"
+    };
+  };
 
   // API Routes
   app.get("/api/services", async (req, res) => {
-    if (!API_KEY) {
-      return res.status(400).json({ error: "SMM API Key is missing. Please set SMM_API_KEY in your environment variables." });
+    const { apiKey, apiUrl } = await getSmmConfig();
+    if (!apiKey) {
+      return res.status(400).json({ error: "SMM API Key is missing. Please set it in Admin Panel > App Management." });
     }
     try {
-      const response = await fetch(API_URL, {
+      const params = new URLSearchParams();
+      params.append('key', apiKey);
+      params.append('action', 'services');
+
+      const response = await fetch(apiUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          key: API_KEY,
-          action: "services",
-        }),
+        body: params,
       });
       
       const contentType = response.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
         const text = await response.text();
         console.error("Non-JSON response from SMM API:", text);
-        return res.status(500).json({ error: "SMM API returned an invalid response (not JSON). Check your API URL and Key." });
+        return res.status(500).json({ 
+          error: `SMM API returned an invalid response (Status: ${response.status}). Check your API URL and Key in Admin Panel.`,
+          details: text.substring(0, 100)
+        });
       }
 
-      const data = await response.json();
+      const data = await response.json() as any;
+      if (!response.ok) {
+        return res.status(response.status).json({ 
+          error: data.error || `SMM API Error: ${response.status}`,
+          details: data
+        });
+      }
       res.json(data);
     } catch (error: any) {
       console.error("Error fetching services:", error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: `Connection Error: ${error.message}` });
     }
   });
 
   app.post("/api/order", async (req, res) => {
-    if (!API_KEY) {
-      return res.status(400).json({ error: "SMM API Key is missing." });
+    const { apiKey, apiUrl } = await getSmmConfig();
+    if (!apiKey) {
+      return res.status(400).json({ error: "SMM API Key is missing. Please set it in Admin Panel." });
     }
     const { service, link, quantity } = req.body;
     try {
-      const response = await fetch(API_URL, {
+      const params = new URLSearchParams();
+      params.append('key', apiKey);
+      params.append('action', 'add');
+      params.append('service', service);
+      params.append('link', link);
+      params.append('quantity', quantity);
+
+      const response = await fetch(apiUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          key: API_KEY,
-          action: "add",
-          service,
-          link,
-          quantity,
-        }),
+        body: params,
       });
 
       const contentType = response.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
         const text = await response.text();
         console.error("Non-JSON response from SMM API (order):", text);
-        return res.status(500).json({ error: "SMM API returned an invalid response." });
+        return res.status(500).json({ 
+          error: `SMM API Error (Status: ${response.status}). The API did not return JSON.`,
+          details: text.substring(0, 100)
+        });
       }
 
-      const data = await response.json();
+      const data = await response.json() as any;
+      if (!response.ok) {
+        return res.status(response.status).json({ 
+          error: data.error || `SMM API Error: ${response.status}`,
+          details: data
+        });
+      }
       res.json(data);
     } catch (error: any) {
       console.error("Error placing order:", error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: `Connection Error: ${error.message}` });
     }
   });
 
   app.get("/api/order-status/:id", async (req, res) => {
-    if (!API_KEY) {
+    const { apiKey, apiUrl } = await getSmmConfig();
+    if (!apiKey) {
       return res.status(400).json({ error: "SMM API Key is missing." });
     }
     const { id } = req.params;
     try {
-      const response = await fetch(API_URL, {
+      const params = new URLSearchParams();
+      params.append('key', apiKey);
+      params.append('action', 'status');
+      params.append('order', id);
+
+      const response = await fetch(apiUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          key: API_KEY,
-          action: "status",
-          order: id,
-        }),
+        body: params,
       });
 
       const contentType = response.headers.get("content-type");
@@ -100,7 +154,13 @@ async function startServer() {
         return res.status(500).json({ error: "SMM API returned an invalid response." });
       }
 
-      const data = await response.json();
+      const data = await response.json() as any;
+      if (!response.ok) {
+        return res.status(response.status).json({ 
+          error: data.error || `SMM API Error: ${response.status}`,
+          details: data
+        });
+      }
       res.json(data);
     } catch (error: any) {
       console.error("Error fetching order status:", error);
