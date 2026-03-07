@@ -10,6 +10,7 @@ export interface UserData {
 
 export interface Service {
   id: string;
+  api_service_id?: string; // ID from SMM API
   name: string;
   category: string;
   emoji: string;
@@ -24,6 +25,8 @@ export interface Order {
   id: string;
   userId: string;
   serviceId: string;
+  api_service_id?: string;
+  api_order_id?: string;
   serviceName: string;
   category: string;
   link: string;

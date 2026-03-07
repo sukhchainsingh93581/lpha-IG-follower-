@@ -5,12 +5,49 @@ import { useAuth } from '../contexts/AuthContext';
 import { Order } from '../types';
 import { formatCurrency, formatDate } from '../utils';
 import { motion, AnimatePresence } from 'motion/react';
-import { ClipboardList, Clock, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { ClipboardList, Clock, CheckCircle2, XCircle, Loader2, RefreshCcw } from 'lucide-react';
+import { doc, updateDoc } from 'firebase/firestore';
 
 const OrdersPage = () => {
   const { user } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const checkStatus = async (order: Order) => {
+    if (!order.api_order_id) return;
+    try {
+      const response = await fetch(`/api/order-status/${order.api_order_id}`);
+      const data = await response.json();
+      
+      if (data.status) {
+        let newStatus = data.status;
+        // Map API status to local status if needed
+        if (newStatus === 'Pending') newStatus = 'Pending';
+        if (newStatus === 'Processing') newStatus = 'Processing';
+        if (newStatus === 'Completed') newStatus = 'Completed';
+        if (newStatus === 'Canceled' || newStatus === 'Partial') newStatus = 'Cancelled';
+        
+        if (newStatus !== order.status) {
+          await updateDoc(doc(db, 'orders', order.id), {
+            status: newStatus,
+            updatedAt: new Date()
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error checking status:', error);
+    }
+  };
+
+  const refreshStatuses = async () => {
+    setRefreshing(true);
+    const pendingOrders = orders.filter(o => o.status === 'Pending' || o.status === 'Processing');
+    for (const order of pendingOrders) {
+      await checkStatus(order);
+    }
+    setRefreshing(false);
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -73,9 +110,18 @@ const OrdersPage = () => {
 
   return (
     <div className="space-y-6">
-      <header className="mb-8">
-        <h2 className="text-sm font-medium opacity-60 uppercase tracking-widest mb-1" style={{ color: 'var(--text-primary)' }}>Track Your</h2>
-        <h1 className="text-3xl font-bold" style={{ color: 'var(--text-primary)' }}>Premium Orders</h1>
+      <header className="mb-8 flex items-center justify-between">
+        <div>
+          <h2 className="text-sm font-medium opacity-60 uppercase tracking-widest mb-1" style={{ color: 'var(--text-primary)' }}>Track Your</h2>
+          <h1 className="text-3xl font-bold" style={{ color: 'var(--text-primary)' }}>Premium Orders</h1>
+        </div>
+        <button 
+          onClick={refreshStatuses}
+          disabled={refreshing}
+          className="p-3 glass rounded-2xl hover:bg-white/10 transition-all active:scale-95 disabled:opacity-50"
+        >
+          <RefreshCcw className={`w-5 h-5 text-cyan-400 ${refreshing ? 'animate-spin' : ''}`} />
+        </button>
       </header>
 
       {orders.length === 0 ? (

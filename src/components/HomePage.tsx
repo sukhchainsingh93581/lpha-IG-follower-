@@ -11,6 +11,7 @@ import Swal from 'sweetalert2';
 const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
   const { user, userData } = useAuth();
   const [services, setServices] = useState<Service[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [ordering, setOrdering] = useState(false);
   
@@ -22,8 +23,8 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
   const [quantity, setQuantity] = useState<number | ''>('');
 
   useEffect(() => {
-    const q = query(collection(db, 'services'), where('enabled', '==', true));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const qServices = query(collection(db, 'services'), where('enabled', '==', true));
+    const unsubscribeServices = onSnapshot(qServices, (snapshot) => {
       const servicesData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -32,12 +33,24 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    const qCategories = collection(db, 'categories');
+    const unsubscribeCategories = onSnapshot(qCategories, (snapshot) => {
+      const categoriesData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setCategories(categoriesData);
+    });
+
+    return () => {
+      unsubscribeServices();
+      unsubscribeCategories();
+    };
   }, []);
 
-  const categories = useMemo(() => {
-    const cats = Array.from(new Set(services.map(s => s.category)));
-    return cats.sort();
+  const categoryList = useMemo(() => {
+    const serviceCats = services.map(s => s.category);
+    return Array.from(new Set(serviceCats)).filter(cat => cat).sort();
   }, [services]);
 
   const filteredServices = useMemo(() => {
@@ -92,6 +105,28 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
     setOrdering(true);
 
     try {
+      // 1. Call SMM API via backend
+      const apiResponse = await fetch('/api/order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          service: selectedService.api_service_id || selectedService.id,
+          link: link,
+          quantity: qty
+        })
+      });
+
+      const apiData = await apiResponse.json();
+
+      if (apiData.error) {
+        throw new Error(apiData.error);
+      }
+
+      if (!apiData.order) {
+        throw new Error(apiData.error || 'Failed to place order on API');
+      }
+
+      // 2. Update Firebase via transaction
       await runTransaction(db, async (transaction) => {
         const userRef = doc(db, 'users', user.uid);
         const userSnap = await transaction.get(userRef);
@@ -105,7 +140,7 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
 
         transaction.update(userRef, {
           walletBalance: currentBalance - totalCost,
-          balance: currentBalance - totalCost // Keep both for safety if there's inconsistency
+          balance: currentBalance - totalCost
         });
 
         const orderRef = doc(collection(db, 'orders'));
@@ -114,6 +149,8 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
           userName: userData.name || 'Anonymous',
           userEmail: user.email || '',
           serviceId: selectedService.id,
+          api_service_id: selectedService.api_service_id || '',
+          api_order_id: apiData.order.toString(),
           serviceName: selectedService.name,
           category: selectedCategory,
           link: link,
@@ -195,7 +232,7 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
             style={{ color: 'var(--text-primary)' }}
           >
             <option value="">Select Category</option>
-            {categories.map((cat) => (
+            {categoryList.map((cat) => (
               <option key={cat} value={cat}>{cat}</option>
             ))}
           </select>

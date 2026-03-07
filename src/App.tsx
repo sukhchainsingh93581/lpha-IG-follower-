@@ -10,10 +10,11 @@ import ProfilePage from './components/ProfilePage';
 import BottomNav from './components/BottomNav';
 import AdminPanel from './components/AdminPanel';
 import { motion, AnimatePresence } from 'motion/react';
-import { Loader2, Coins, ShieldAlert } from 'lucide-react';
+import { Loader2, Coins, ShieldAlert, Settings } from 'lucide-react';
+import Swal from 'sweetalert2';
 import { formatCurrency } from './utils';
 import { db, auth } from './firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, collection, getDocs, writeBatch, query, limit, addDoc, serverTimestamp } from 'firebase/firestore';
 import { useEffect } from 'react';
 
 const AppContent = () => {
@@ -21,20 +22,130 @@ const AppContent = () => {
   const [activeTab, setActiveTab] = useState('home');
   const [isAdminView, setIsAdminView] = useState(false);
   const [appName, setAppName] = useState('InstaBoost');
+  const [isMaintenanceMode, setIsMaintenanceMode] = useState(false);
+
+  useEffect(() => {
+    const syncServices = async () => {
+      try {
+        const response = await fetch('/api/services');
+        const apiServices = await response.json();
+        
+        if (Array.isArray(apiServices)) {
+          // Sync Categories
+          const apiCategories = [...new Set(apiServices.map((s: any) => s.category))];
+          const categoriesRef = collection(db, 'categories');
+          const categoriesSnap = await getDocs(categoriesRef);
+          const existingCategories = new Set(categoriesSnap.docs.map(doc => doc.data().name));
+
+          for (const catName of apiCategories) {
+            if (!existingCategories.has(catName)) {
+              await addDoc(categoriesRef, {
+                name: catName,
+                icon: '✨',
+                createdAt: serverTimestamp()
+              });
+            }
+          }
+
+          const servicesRef = collection(db, 'services');
+          const existingServicesSnap = await getDocs(query(servicesRef, limit(1)));
+          
+          if (existingServicesSnap.empty) {
+            const batch = writeBatch(db);
+            apiServices.forEach((s: any) => {
+              const newDocRef = doc(servicesRef);
+              batch.set(newDocRef, {
+                api_service_id: s.service.toString(),
+                name: s.name,
+                category: s.category,
+                emoji: '✨',
+                description: s.name,
+                pricePerUnit: parseFloat(s.rate) / 1000,
+                minQty: parseInt(s.min),
+                maxQty: parseInt(s.max),
+                enabled: true,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+              });
+            });
+            await batch.commit();
+            console.log('Services synced from API');
+          }
+        }
+      } catch (error) {
+        console.error('Error syncing services:', error);
+      }
+    };
+
+    syncServices();
+  }, []);
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'settings', 'app_config'), (doc) => {
       if (doc.exists()) {
-        setAppName(doc.data().appName || 'InstaBoost');
+        const data = doc.data();
+        setAppName(data.appName || 'InstaBoost');
+        setIsMaintenanceMode(data.isMaintenanceMode || false);
       }
     });
     return () => unsub();
   }, []);
 
+  const handleAdminAccess = async () => {
+    const { value: password } = await Swal.fire({
+      title: 'Admin Access',
+      input: 'password',
+      inputLabel: 'Enter Admin Password',
+      inputPlaceholder: '••••••••',
+      showCancelButton: true,
+      confirmButtonColor: '#06b6d4',
+    });
+
+    if (password === 'Admin93581') {
+      setIsAdminView(true);
+    } else if (password) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Access Denied',
+        text: 'Incorrect admin password.',
+      });
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="w-12 h-12 animate-spin text-white" />
+      </div>
+    );
+  }
+
+  if (isMaintenanceMode && !isAdminView) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-8 text-center space-y-8 bg-slate-900">
+        <div className="w-24 h-24 bg-cyan-500/10 rounded-full flex items-center justify-center">
+          <Settings className="w-12 h-12 text-cyan-500 animate-spin" />
+        </div>
+        <div className="space-y-3">
+          <h1 className="text-3xl font-black text-white tracking-tight">App Management</h1>
+          <p className="text-slate-400 font-medium max-w-xs mx-auto">
+            The application is currently undergoing maintenance. Please check back later.
+          </p>
+        </div>
+        <div className="flex flex-col w-full max-w-xs gap-4">
+          <button 
+            onClick={() => window.history.back()}
+            className="w-full bg-slate-800 text-white py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-slate-700 transition-all"
+          >
+            Back
+          </button>
+          <button 
+            onClick={handleAdminAccess}
+            className="w-full bg-cyan-500 text-white py-4 rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-cyan-500/20 hover:scale-105 transition-all"
+          >
+            Admin Access
+          </button>
+        </div>
       </div>
     );
   }

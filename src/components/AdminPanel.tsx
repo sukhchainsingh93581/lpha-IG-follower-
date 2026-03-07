@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { collection, onSnapshot, query, orderBy, limit, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, getDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, limit, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, getDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -20,6 +20,7 @@ import {
   Save,
   Search,
   Loader2,
+  RefreshCcw,
   ShoppingCart,
   CreditCard,
   Bell,
@@ -118,7 +119,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     qrUrl: '',
     upiId: '',
     minPayment: 10,
-    maxPayment: 10000
+    maxPayment: 10000,
+    isMaintenanceMode: false
   });
   const [savingConfig, setSavingConfig] = useState(false);
 
@@ -133,14 +135,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
       description: '',
       pricePerUnit: '',
       minQty: '',
-      maxQty: ''
+      maxQty: '',
+      api_service_id: ''
     }]
   });
+
 
   const addServiceItem = () => {
     setServiceForm(prev => ({
       ...prev,
-      items: [...prev.items, { name: '', emoji: '', description: '', pricePerUnit: '', minQty: '', maxQty: '' }]
+      items: [...prev.items, { name: '', emoji: '', description: '', pricePerUnit: '', minQty: '', maxQty: '', api_service_id: '' }]
     }));
   };
 
@@ -190,6 +194,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
       setStats(prev => ({ ...prev, totalServices: snapshot.size }));
     });
 
+
     // App Config
     const unsubscribeConfig = onSnapshot(doc(db, 'settings', 'app_config'), (snapshot) => {
       if (snapshot.exists()) {
@@ -223,16 +228,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
       setFundRequests(requests);
     });
 
-    return () => {
-      unsubscribeUsersList();
-      unsubscribeNotifications();
-      unsubscribeOrders();
-      unsubscribeServices();
-      unsubscribeConfig();
-      unsubscribeAllOrders();
-      unsubscribeRecent();
-      unsubscribeFunds();
-    };
+      return () => {
+        unsubscribeUsersList();
+        unsubscribeNotifications();
+        unsubscribeOrders();
+        unsubscribeServices();
+        unsubscribeConfig();
+        unsubscribeAllOrders();
+        unsubscribeRecent();
+        unsubscribeFunds();
+      };
   }, []);
 
   const handleUpdatePaymentStatus = async (requestId: string, newStatus: 'Approved' | 'Rejected') => {
@@ -521,6 +526,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
           pricePerUnit: parseFloat(item.pricePerUnit),
           minQty: parseInt(item.minQty),
           maxQty: parseInt(item.maxQty),
+          api_service_id: item.api_service_id || '',
           enabled: true,
           updatedAt: serverTimestamp()
         };
@@ -536,6 +542,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
           pricePerUnit: parseFloat(item.pricePerUnit),
           minQty: parseInt(item.minQty),
           maxQty: parseInt(item.maxQty),
+          api_service_id: item.api_service_id || '',
           enabled: true,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
@@ -551,10 +558,75 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
       setEditingService(null);
       setServiceForm({ 
         category: '', 
-        items: [{ name: '', emoji: '', description: '', pricePerUnit: '', minQty: '', maxQty: '' }] 
+        items: [{ name: '', emoji: '', description: '', pricePerUnit: '', minQty: '', maxQty: '', api_service_id: '' }] 
       });
     } catch (error: any) {
       Swal.fire({ icon: 'error', title: 'Error', text: error.message });
+    }
+  };
+
+
+  const handleSyncServices = async () => {
+    const result = await Swal.fire({
+      title: 'Sync Services?',
+      text: 'This will fetch all services from SMM API and add missing ones to Firebase.',
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, Sync',
+      showLoaderOnConfirm: true,
+      preConfirm: async () => {
+        try {
+          const response = await fetch('/api/services');
+          if (!response.ok) throw new Error('Failed to fetch services from API');
+          const apiServices = await response.json();
+          
+          if (Array.isArray(apiServices)) {
+            const existingApiIds = new Set(services.map(s => s.api_service_id));
+            const newServices = apiServices.filter(s => !existingApiIds.has(s.service.toString()));
+            
+            if (newServices.length === 0) return 0;
+
+            // Use batches for better performance (limit 500 per batch)
+            const batchSize = 400;
+            let addedCount = 0;
+
+            for (let i = 0; i < newServices.length; i += batchSize) {
+              const batch = writeBatch(db);
+              const chunk = newServices.slice(i, i + batchSize);
+              
+              chunk.forEach(s => {
+                const newDocRef = doc(collection(db, 'services'));
+                batch.set(newDocRef, {
+                  api_service_id: s.service.toString(),
+                  name: s.name,
+                  category: s.category,
+                  emoji: '✨',
+                  description: s.name,
+                  pricePerUnit: parseFloat(s.rate) / 1000,
+                  minQty: parseInt(s.min),
+                  maxQty: parseInt(s.max),
+                  enabled: true,
+                  createdAt: serverTimestamp(),
+                  updatedAt: serverTimestamp()
+                });
+                addedCount++;
+              });
+              
+              await batch.commit();
+            }
+            
+            return addedCount;
+          }
+          throw new Error('Invalid API response: ' + JSON.stringify(apiServices));
+        } catch (error: any) {
+          Swal.showValidationMessage(`Sync failed: ${error.message}`);
+        }
+      },
+      allowOutsideClick: () => !Swal.isLoading()
+    });
+
+    if (result.isConfirmed) {
+      Swal.fire({ icon: 'success', title: 'Sync Complete', text: `${result.value} new services added.` });
     }
   };
 
@@ -645,7 +717,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                   view === 'services' ? 'bg-cyan-50 text-cyan-600' : 'text-slate-500 hover:bg-slate-50'
                 }`}
               >
-                <Settings className="w-5 h-5" />
+                <Layers className="w-5 h-5" />
                 Service Management
               </button>
               <button
@@ -800,23 +872,32 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
 
         {view === 'services' && (
           <div className="space-y-6">
-            {/* Service Management View */}
+            {/* Category Management View */}
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-black text-slate-800 tracking-tight">Manage Services</h2>
-              <button 
-                onClick={() => { 
-                  setEditingService(null); 
-                  setServiceForm({ 
-                    category: '', 
-                    items: [{ name: '', emoji: '', description: '', pricePerUnit: '', minQty: '', maxQty: '' }] 
-                  }); 
-                  setShowServiceModal(true); 
-                }}
-                className="bg-cyan-500 text-white p-3 rounded-2xl flex items-center gap-2 font-bold shadow-lg shadow-cyan-200 hover:scale-105 transition-transform"
-              >
-                <Plus className="w-5 h-5" />
-                New Service
-              </button>
+              <div className="flex gap-2">
+                <button 
+                  onClick={handleSyncServices}
+                  className="bg-slate-100 text-slate-600 p-3 rounded-2xl flex items-center gap-2 font-bold hover:bg-slate-200 transition-colors"
+                >
+                  <RefreshCcw className="w-5 h-5" />
+                  Sync
+                </button>
+                <button 
+                  onClick={() => { 
+                    setEditingService(null); 
+                    setServiceForm({ 
+                      category: '', 
+                      items: [{ name: '', emoji: '', description: '', pricePerUnit: '', minQty: '', maxQty: '', api_service_id: '' }] 
+                    }); 
+                    setShowServiceModal(true); 
+                  }}
+                  className="bg-cyan-500 text-white p-3 rounded-2xl flex items-center gap-2 font-bold shadow-lg shadow-cyan-200 hover:scale-105 transition-transform"
+                >
+                  <Plus className="w-5 h-5" />
+                  New Service
+                </button>
+              </div>
             </div>
 
             <div className="space-y-4">
@@ -900,6 +981,22 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                   value={appConfig.appName}
                   onChange={(e) => setAppConfig({ ...appConfig, appName: e.target.value })}
                 />
+              </div>
+
+              <div className="flex items-center justify-between p-6 bg-slate-50 rounded-3xl border border-slate-100">
+                <div className="space-y-1">
+                  <h3 className="font-black text-slate-800">Maintenance Mode</h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                    {appConfig.isMaintenanceMode ? 'App is currently locked' : 'App is currently active'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAppConfig({ ...appConfig, isMaintenanceMode: !appConfig.isMaintenanceMode })}
+                  className={`w-14 h-8 rounded-full relative transition-colors ${appConfig.isMaintenanceMode ? 'bg-rose-500' : 'bg-slate-200'}`}
+                >
+                  <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all ${appConfig.isMaintenanceMode ? 'left-7' : 'left-1'}`} />
+                </button>
               </div>
 
               <div className="space-y-1.5">
@@ -1485,7 +1582,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
         )}
       </div>
 
-      {/* Service Modal */}
+      {/* Category Modal */}
       <AnimatePresence>
         {showServiceModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center px-4">
@@ -1615,6 +1712,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                             className="w-full bg-white border border-slate-100 rounded-xl py-2 px-3 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700 text-sm"
                             value={item.maxQty}
                             onChange={(e) => updateServiceItem(index, 'maxQty', e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">API ID</label>
+                          <input
+                            placeholder="e.g. 123"
+                            className="w-full bg-white border border-slate-100 rounded-xl py-2 px-3 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700 text-sm"
+                            value={item.api_service_id}
+                            onChange={(e) => updateServiceItem(index, 'api_service_id', e.target.value)}
                           />
                         </div>
                       </div>
