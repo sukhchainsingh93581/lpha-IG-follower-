@@ -116,6 +116,11 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
         })
       });
 
+      if (!apiResponse.ok) {
+        const errorData = await apiResponse.json().catch(() => ({}));
+        throw new Error(errorData.error || `Server error: ${apiResponse.status}`);
+      }
+
       const apiData = await apiResponse.json();
 
       if (apiData.error) {

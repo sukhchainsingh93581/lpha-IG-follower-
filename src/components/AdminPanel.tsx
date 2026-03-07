@@ -577,7 +577,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
       preConfirm: async () => {
         try {
           const response = await fetch('/api/services');
-          if (!response.ok) throw new Error('Failed to fetch services from API');
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || `Server error: ${response.status}`);
+          }
           const apiServices = await response.json();
           
           if (Array.isArray(apiServices)) {
