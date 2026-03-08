@@ -21,6 +21,25 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
   const [selectedServiceId, setSelectedServiceId] = useState<string>('');
   const [link, setLink] = useState<string>('');
   const [quantity, setQuantity] = useState<number | ''>('');
+  const serviceSelectRef = React.useRef<HTMLDivElement>(null);
+  const serviceDetailsRef = React.useRef<HTMLDivElement>(null);
+  const linkInputRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (selectedCategory && serviceSelectRef.current) {
+      serviceSelectRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [selectedCategory]);
+
+  useEffect(() => {
+    if (selectedServiceId && serviceDetailsRef.current) {
+      serviceDetailsRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Also scroll to link after a short delay to let details animate
+      setTimeout(() => {
+        linkInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 500);
+    }
+  }, [selectedServiceId]);
 
   useEffect(() => {
     const qServices = query(collection(db, 'services'), where('enabled', '==', true));
@@ -55,11 +74,13 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
 
   const filteredServices = useMemo(() => {
     if (!selectedCategory) return [];
-    return services.filter(s => {
-      const matchesCategory = s.category === selectedCategory;
-      const matchesSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesCategory && matchesSearch;
-    });
+    return services
+      .filter(s => {
+        const matchesCategory = s.category === selectedCategory;
+        const matchesSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase());
+        return matchesCategory && matchesSearch;
+      })
+      .sort((a, b) => a.pricePerUnit - b.pricePerUnit);
   }, [services, selectedCategory, searchQuery]);
 
   const selectedService = useMemo(() => 
@@ -249,8 +270,23 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
       </div>
 
       {/* Service Selection */}
-      <div className="space-y-2">
-        <label className="text-sm font-bold opacity-80 ml-1" style={{ color: 'var(--text-primary)' }}>Service</label>
+      <motion.div 
+        ref={serviceSelectRef}
+        animate={selectedCategory ? { scale: [1, 1.01, 1] } : {}}
+        className="space-y-2"
+      >
+        <div className="flex items-center justify-between ml-1">
+          <label className="text-sm font-bold opacity-80" style={{ color: 'var(--text-primary)' }}>Service</label>
+          {selectedCategory && !selectedServiceId && (
+            <motion.span 
+              animate={{ opacity: [0.4, 1, 0.4] }}
+              transition={{ repeat: Infinity, duration: 1.5 }}
+              className="text-[10px] font-black text-cyan-400 uppercase tracking-widest"
+            >
+              Select Now
+            </motion.span>
+          )}
+        </div>
         <div className="relative">
           <select
             value={selectedServiceId}
@@ -262,22 +298,23 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
             <option value="">{selectedCategory ? 'Choose a service...' : 'Select category first'}</option>
             {filteredServices.map((service) => (
               <option key={service.id} value={service.id}>
-                {service.emoji} {service.name}
+                {service.emoji} {service.name} — ₹{service.pricePerUnit}
               </option>
             ))}
           </select>
           <ChevronDown className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 w-5 h-5" />
         </div>
-      </div>
+      </motion.div>
 
       {/* Service Details Card */}
       <AnimatePresence mode="wait">
         {selectedService && (
           <motion.div
+            ref={serviceDetailsRef}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 10 }}
-            className="glass rounded-3xl p-6 space-y-4 shadow-sm"
+            className="glass rounded-3xl p-6 space-y-4 shadow-sm border border-cyan-500/20"
           >
             <div className="flex items-start gap-4">
               <div className="w-14 h-14 rounded-2xl bg-cyan-50 flex items-center justify-center shrink-0">
@@ -302,7 +339,7 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
       </AnimatePresence>
 
       {/* Link Input */}
-      <div className="space-y-2">
+      <div ref={linkInputRef} className="space-y-2">
         <label className="text-sm font-bold opacity-80 ml-1" style={{ color: 'var(--text-primary)' }}>Link</label>
         <input
           type="url"
