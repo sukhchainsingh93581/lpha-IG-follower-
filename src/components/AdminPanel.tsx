@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { collection, onSnapshot, query, orderBy, limit, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, getDoc, writeBatch } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, limit, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, getDoc, writeBatch, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -120,7 +120,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     upiId: '',
     minPayment: 10,
     maxPayment: 10000,
-    isMaintenanceMode: false
+    isMaintenanceMode: false,
+    serviceMarkup: 0
   });
   const [savingConfig, setSavingConfig] = useState(false);
 
@@ -487,16 +488,65 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     e.preventDefault();
     setSavingConfig(true);
     try {
-      await updateDoc(doc(db, 'settings', 'app_config'), {
+      const configRef = doc(db, 'settings', 'app_config');
+      const configSnap = await getDoc(configRef);
+      const oldConfig = configSnap.exists() ? configSnap.data() : null;
+      
+      await updateDoc(configRef, {
         ...appConfig,
         updatedAt: serverTimestamp()
       });
-      Swal.fire({ icon: 'success', title: 'Config Saved', toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 });
+
+      // If markup changed, update all service prices
+      if (!oldConfig || oldConfig.serviceMarkup !== appConfig.serviceMarkup) {
+        // Fetch fresh API prices to ensure we have the real base prices
+        let apiPricesMap: Record<string, number> = {};
+        try {
+          const apiRes = await fetch('/api/services');
+          if (apiRes.ok) {
+            const apiServices = await apiRes.json();
+            if (Array.isArray(apiServices)) {
+              apiServices.forEach((s: any) => {
+                apiPricesMap[s.service.toString()] = parseFloat(s.rate) / 1000;
+              });
+            }
+          }
+        } catch (apiErr) {
+          console.error("Failed to fetch fresh API prices for markup update:", apiErr);
+        }
+
+        const servicesSnap = await getDocs(collection(db, 'services'));
+        const serviceDocs = servicesSnap.docs;
+        const markup = Number(appConfig.serviceMarkup) || 0;
+        
+        // Update in chunks of 400
+        for (let i = 0; i < serviceDocs.length; i += 400) {
+          const batch = writeBatch(db);
+          const chunk = serviceDocs.slice(i, i + 400);
+          
+          chunk.forEach((doc) => {
+            const data = doc.data();
+            const apiId = data.api_service_id;
+            let basePrice = (apiId && apiPricesMap[apiId]) || data.basePrice || data.pricePerUnit || 0;
+            const newPrice = basePrice * (1 + markup / 100);
+            
+            batch.update(doc.ref, { 
+              basePrice: basePrice, 
+              pricePerUnit: Number(newPrice.toFixed(4)),
+              updatedAt: serverTimestamp() 
+            });
+          });
+          
+          await batch.commit();
+        }
+        
+        Swal.fire({ icon: 'success', title: 'Config & Prices Updated', text: `All services updated with ${appConfig.serviceMarkup}% markup. Old markup has been removed.`, toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 });
+      } else {
+        Swal.fire({ icon: 'success', title: 'Config Saved', toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 });
+      }
     } catch (error: any) {
       // If document doesn't exist, create it
       try {
-        await addDoc(collection(db, 'settings'), { ...appConfig, id: 'app_config' }); // This is wrong for specific ID
-        // Correct way to set with specific ID if update fails
         const { setDoc } = await import('firebase/firestore');
         await setDoc(doc(db, 'settings', 'app_config'), {
           ...appConfig,
@@ -599,13 +649,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
               
               chunk.forEach(s => {
                 const newDocRef = doc(collection(db, 'services'));
+                const basePrice = parseFloat(s.rate) / 1000;
+                const markup = Number(appConfig.serviceMarkup) || 0;
+                const finalPrice = basePrice * (1 + markup / 100);
+                
                 batch.set(newDocRef, {
                   api_service_id: s.service.toString(),
                   name: s.name,
                   category: s.category,
                   emoji: '✨',
                   description: s.name,
-                  pricePerUnit: parseFloat(s.rate) / 1000,
+                  basePrice: basePrice,
+                  pricePerUnit: Number(finalPrice.toFixed(4)),
                   minQty: parseInt(s.min),
                   maxQty: parseInt(s.max),
                   enabled: true,
@@ -647,6 +702,59 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
       await deleteDoc(doc(db, 'services', id));
       Swal.fire({ icon: 'success', title: 'Deleted!', toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 });
     }
+  };
+
+  const handleDeleteAllServices = async () => {
+    const result = await Swal.fire({
+      title: 'Delete All Services & Categories?',
+      text: 'This action is permanent and will remove everything from Service Management!',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#ef4444',
+      cancelButtonColor: '#94a3b8',
+      confirmButtonText: 'Yes, Delete All'
+    });
+
+    if (result.isConfirmed) {
+      try {
+        Swal.fire({
+          title: 'Deleting...',
+          text: 'Please wait while we clear all services.',
+          allowOutsideClick: false,
+          didOpen: () => {
+            Swal.showLoading();
+          }
+        });
+
+        // Delete all services in chunks of 400
+        const servicesSnap = await getDocs(collection(db, 'services'));
+        const serviceDocs = servicesSnap.docs;
+        for (let i = 0; i < serviceDocs.length; i += 400) {
+          const batch = writeBatch(db);
+          const chunk = serviceDocs.slice(i, i + 400);
+          chunk.forEach(doc => batch.delete(doc.ref));
+          await batch.commit();
+        }
+
+        // Delete all categories in chunks of 400
+        const categoriesSnap = await getDocs(collection(db, 'categories'));
+        const categoryDocs = categoriesSnap.docs;
+        for (let i = 0; i < categoryDocs.length; i += 400) {
+          const batch = writeBatch(db);
+          const chunk = categoryDocs.slice(i, i + 400);
+          chunk.forEach(doc => batch.delete(doc.ref));
+          await batch.commit();
+        }
+
+        Swal.fire({ icon: 'success', title: 'All Services & Categories Deleted', toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 });
+      } catch (error: any) {
+        Swal.fire({ icon: 'error', title: 'Error', text: error.message });
+      }
+    }
+  };
+
+  const handleIncreaseCharges = async () => {
+    // Redundant - functionality moved to App Management markup
   };
 
   const openEditModal = (service: any) => {
@@ -876,29 +984,42 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
         {view === 'services' && (
           <div className="space-y-6">
             {/* Category Management View */}
-            <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-black text-slate-800 tracking-tight">Manage Services</h2>
-              <div className="flex gap-2">
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-black text-slate-800 tracking-tight">Manage Services</h2>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={handleSyncServices}
+                    className="bg-slate-100 text-slate-600 p-3 rounded-2xl flex items-center gap-2 font-bold hover:bg-slate-200 transition-colors"
+                  >
+                    <RefreshCcw className="w-5 h-5" />
+                    Sync
+                  </button>
+                  <button 
+                    onClick={() => { 
+                      setEditingService(null); 
+                      setServiceForm({ 
+                        category: '', 
+                        items: [{ name: '', emoji: '', description: '', pricePerUnit: '', minQty: '', maxQty: '', api_service_id: '' }] 
+                      }); 
+                      setShowServiceModal(true); 
+                    }}
+                    className="bg-cyan-500 text-white p-3 rounded-2xl flex items-center gap-2 font-bold shadow-lg shadow-cyan-200 hover:scale-105 transition-transform"
+                  >
+                    <Plus className="w-5 h-5" />
+                    New Service
+                  </button>
+                </div>
+              </div>
+
+              {/* Bulk Actions Bar */}
+              <div className="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-hide">
                 <button 
-                  onClick={handleSyncServices}
-                  className="bg-slate-100 text-slate-600 p-3 rounded-2xl flex items-center gap-2 font-bold hover:bg-slate-200 transition-colors"
+                  onClick={handleDeleteAllServices}
+                  className="whitespace-nowrap bg-rose-50 text-rose-600 px-4 py-2.5 rounded-xl flex items-center gap-2 font-black text-[10px] uppercase tracking-widest border border-rose-100 hover:bg-rose-100 transition-colors"
                 >
-                  <RefreshCcw className="w-5 h-5" />
-                  Sync
-                </button>
-                <button 
-                  onClick={() => { 
-                    setEditingService(null); 
-                    setServiceForm({ 
-                      category: '', 
-                      items: [{ name: '', emoji: '', description: '', pricePerUnit: '', minQty: '', maxQty: '', api_service_id: '' }] 
-                    }); 
-                    setShowServiceModal(true); 
-                  }}
-                  className="bg-cyan-500 text-white p-3 rounded-2xl flex items-center gap-2 font-bold shadow-lg shadow-cyan-200 hover:scale-105 transition-transform"
-                >
-                  <Plus className="w-5 h-5" />
-                  New Service
+                  <Trash2 className="w-4 h-4" />
+                  Delete All Services
                 </button>
               </div>
             </div>
@@ -984,6 +1105,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                   value={appConfig.appName}
                   onChange={(e) => setAppConfig({ ...appConfig, appName: e.target.value })}
                 />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Service Markup (%)</label>
+                <input
+                  type="number"
+                  required
+                  placeholder="e.g. 20"
+                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700"
+                  value={appConfig.serviceMarkup}
+                  onChange={(e) => setAppConfig({ ...appConfig, serviceMarkup: parseInt(e.target.value) || 0 })}
+                />
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest ml-1">This percentage will be added to the base SMM API price.</p>
               </div>
 
               <div className="flex items-center justify-between p-6 bg-slate-50 rounded-3xl border border-slate-100">

@@ -14,7 +14,7 @@ import { Loader2, Coins, ShieldAlert, Settings } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { formatCurrency } from './utils';
 import { db, auth } from './firebase';
-import { doc, onSnapshot, collection, getDocs, writeBatch, query, limit, addDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, onSnapshot, collection, getDocs, writeBatch, query, limit, addDoc, serverTimestamp, getDoc } from 'firebase/firestore';
 import { useEffect } from 'react';
 
 const AppContent = () => {
@@ -27,6 +27,9 @@ const AppContent = () => {
   useEffect(() => {
     const syncServices = async () => {
       try {
+        const configSnap = await getDoc(doc(db, 'settings', 'app_config'));
+        const markup = configSnap.exists() ? (configSnap.data().serviceMarkup || 0) : 0;
+
         const response = await fetch('/api/services');
         if (!response.ok) {
           if (response.status === 404) {
@@ -61,13 +64,17 @@ const AppContent = () => {
             const batch = writeBatch(db);
             apiServices.forEach((s: any) => {
               const newDocRef = doc(servicesRef);
+              const basePrice = parseFloat(s.rate) / 1000;
+              const finalPrice = basePrice * (1 + markup / 100);
+              
               batch.set(newDocRef, {
                 api_service_id: s.service.toString(),
                 name: s.name,
                 category: s.category,
                 emoji: '✨',
                 description: s.name,
-                pricePerUnit: parseFloat(s.rate) / 1000,
+                basePrice: basePrice,
+                pricePerUnit: Number(finalPrice.toFixed(4)),
                 minQty: parseInt(s.min),
                 maxQty: parseInt(s.max),
                 enabled: true,
