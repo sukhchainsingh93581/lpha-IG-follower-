@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Service } from '../types';
 import { formatCurrency } from '../utils';
 import { motion, AnimatePresence } from 'motion/react';
-import { Loader2, Send, Info, Link as LinkIcon, Hash, Search, ChevronDown, User } from 'lucide-react';
+import { Loader2, Send, Info, Link as LinkIcon, Hash, Search, ChevronDown, User, Clock } from 'lucide-react';
 import Swal from 'sweetalert2';
 
 const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
@@ -126,69 +126,84 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
     setOrdering(true);
 
     try {
-      // 1. Call SMM API via backend
-      const apiResponse = await fetch('/api/order', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          service: selectedService.api_service_id || selectedService.id,
-          link: link,
-          quantity: qty
-        })
-      });
-
-      if (!apiResponse.ok) {
-        if (apiResponse.status === 404) {
-          throw new Error("API Route not found. If you are on Netlify, please note that Netlify does not support the backend server. Use Render or Railway instead.");
-        }
-        const errorData = await apiResponse.json().catch(() => ({}));
-        throw new Error(errorData.error || `Server error: ${apiResponse.status}`);
-      }
-
-      const apiData = await apiResponse.json();
-
-      if (apiData.error) {
-        throw new Error(apiData.error);
-      }
-
-      if (!apiData.order) {
-        throw new Error(apiData.error || 'Failed to place order on API');
-      }
-
-      // 2. Update Firebase via transaction
+      // 1. Deduct balance first via transaction
       await runTransaction(db, async (transaction) => {
         const userRef = doc(db, 'users', user.uid);
         const userSnap = await transaction.get(userRef);
         
-        if (!userSnap.exists()) throw new Error("User does not exist!");
+        if (!userSnap.exists()) throw new Error("User document not found!");
         
-        const userData = userSnap.data();
-        const currentBalance = userData.walletBalance || userData.balance || 0;
+        const data = userSnap.data();
+        const currentBalance = data.walletBalance || 0;
         
-        if (currentBalance < totalCost) throw new Error("Insufficient balance!");
+        if (currentBalance < totalCost) {
+          throw new Error(`Insufficient balance! You need ${formatCurrency(totalCost)} but have ${formatCurrency(currentBalance)}.`);
+        }
 
         transaction.update(userRef, {
           walletBalance: currentBalance - totalCost,
+          // Keep balance field in sync if used elsewhere
           balance: currentBalance - totalCost
         });
+      });
 
-        const orderRef = doc(collection(db, 'orders'));
-        transaction.set(orderRef, {
-          userId: user.uid,
-          userName: userData.name || 'Anonymous',
-          userEmail: user.email || '',
-          serviceId: selectedService.id,
-          api_service_id: selectedService.api_service_id || '',
-          api_order_id: apiData.order.toString(),
-          serviceName: selectedService.name,
-          category: selectedCategory,
-          link: link,
-          quantity: qty,
-          pricePerUnit: selectedService.pricePerUnit,
-          totalCost: totalCost,
-          status: 'Pending',
-          createdAt: serverTimestamp()
+      // 2. Call SMM API via backend
+      let apiData;
+      try {
+        const apiResponse = await fetch('/api/order', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            service: selectedService.api_service_id || selectedService.id,
+            link: link,
+            quantity: qty
+          })
         });
+
+        if (!apiResponse.ok) {
+          const errorData = await apiResponse.json().catch(() => ({}));
+          throw new Error(errorData.error || `SMM API error: ${apiResponse.status}`);
+        }
+
+        apiData = await apiResponse.json();
+
+        if (apiData.error || !apiData.order) {
+          throw new Error(apiData.error || 'Failed to place order on SMM API');
+        }
+      } catch (apiError: any) {
+        // 3. Refund balance if API fails
+        console.error("API failed, refunding balance:", apiError);
+        await runTransaction(db, async (transaction) => {
+          const userRef = doc(db, 'users', user.uid);
+          const userSnap = await transaction.get(userRef);
+          if (userSnap.exists()) {
+            const data = userSnap.data();
+            const currentBalance = data.walletBalance || 0;
+            transaction.update(userRef, {
+              walletBalance: currentBalance + totalCost,
+              balance: currentBalance + totalCost
+            });
+          }
+        });
+        throw apiError;
+      }
+
+      // 4. Create Order record in Firestore
+      await addDoc(collection(db, 'orders'), {
+        userId: user.uid,
+        userName: userData.name || 'Anonymous',
+        userEmail: user.email || '',
+        serviceId: selectedService.id,
+        api_service_id: selectedService.api_service_id || '',
+        api_order_id: apiData.order.toString(),
+        serviceName: selectedService.name,
+        category: selectedCategory,
+        link: link,
+        quantity: qty,
+        pricePerUnit: selectedService.pricePerUnit,
+        totalCost: totalCost,
+        status: 'Pending',
+        createdAt: serverTimestamp()
       });
 
       Swal.fire({
@@ -366,6 +381,33 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
           <p className="text-[10px] opacity-40 ml-1" style={{ color: 'var(--text-primary)' }}>Min: {selectedService.minQty} - Max: {selectedService.maxQty.toLocaleString()}</p>
         )}
       </div>
+
+      {/* Average Time Display */}
+      <AnimatePresence>
+        {selectedService && selectedService.average_time && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="space-y-2"
+          >
+            <label className="text-sm font-bold opacity-80 ml-1" style={{ color: 'var(--text-primary)' }}>Average Time</label>
+            <div className="w-full glass rounded-2xl py-4 px-6 flex items-center gap-3 border border-cyan-500/10">
+              <div className="w-8 h-8 rounded-xl bg-cyan-500/10 flex items-center justify-center">
+                <Clock className="w-4 h-4 text-cyan-400" />
+              </div>
+              <div>
+                <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+                  {selectedService.average_time === "0" || selectedService.average_time === "" 
+                    ? "Instant / Fast" 
+                    : selectedService.average_time}
+                </p>
+                <p className="text-[10px] opacity-40" style={{ color: 'var(--text-primary)' }}>Estimated completion time</p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Charge Display */}
       <div className="space-y-2">

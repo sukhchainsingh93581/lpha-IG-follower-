@@ -19,6 +19,7 @@ export interface Service {
   minQty: number;
   maxQty: number;
   enabled: boolean;
+  average_time?: string;
 }
 
 export interface Order {

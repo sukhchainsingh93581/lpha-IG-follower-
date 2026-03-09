@@ -663,6 +663,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                   pricePerUnit: Number(finalPrice.toFixed(4)),
                   minQty: parseInt(s.min),
                   maxQty: parseInt(s.max),
+                  average_time: s.average_time || '',
                   enabled: true,
                   createdAt: serverTimestamp(),
                   updatedAt: serverTimestamp()
