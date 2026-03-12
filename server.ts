@@ -38,24 +38,29 @@ async function startServer() {
   const getSmmConfig = async () => {
     // HARDCODED FALLBACKS - Update these if needed
     const DEFAULT_API_URL = "https://app.smmowl.com/api/v2";
-    const DEFAULT_API_KEY = "36006c74798b368739665893098737e6"; // Example key from common SMM Owl setups, user should replace
+    const DEFAULT_API_KEY = "36006c74798b368739665893098737e6"; 
 
     try {
       const configDoc = await getDoc(doc(db, 'settings', 'app_config'));
       if (configDoc.exists()) {
         const data = configDoc.data();
-        return {
+        const config = {
           apiKey: (data.smmApiKey || process.env.SMM_API_KEY || DEFAULT_API_KEY).trim(),
           apiUrl: (data.smmApiUrl || process.env.SMM_API_URL || DEFAULT_API_URL).trim()
         };
+        console.log(`[SMM Config] Using URL: ${config.apiUrl} (Key: ${config.apiKey.substring(0, 4)}***)`);
+        return config;
       }
     } catch (error) {
       console.error("Error fetching SMM config from Firestore:", error);
     }
-    return {
+    
+    const fallbackConfig = {
       apiKey: (process.env.SMM_API_KEY || DEFAULT_API_KEY).trim(),
       apiUrl: (process.env.SMM_API_URL || DEFAULT_API_URL).trim()
     };
+    console.log(`[SMM Config] Using Fallback URL: ${fallbackConfig.apiUrl} (Key: ${fallbackConfig.apiKey.substring(0, 4)}***)`);
+    return fallbackConfig;
   };
 
   // API Routes
@@ -128,9 +133,9 @@ async function startServer() {
       const contentType = response.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
         const text = await response.text();
-        console.error("Non-JSON response from SMM API (order):", text);
+        console.error(`Non-JSON response from SMM API (${apiUrl}):`, text);
         return res.status(500).json({ 
-          error: `SMM API Error (Status: ${response.status}). The API did not return JSON.`,
+          error: `SMM API Error (Status: ${response.status}) from ${apiUrl}. The API did not return JSON.`,
           details: text.substring(0, 100)
         });
       }
@@ -138,7 +143,7 @@ async function startServer() {
       const data = await response.json() as any;
       if (!response.ok) {
         return res.status(response.status).json({ 
-          error: data.error || `SMM API Error: ${response.status}`,
+          error: data.error || `SMM API Error: ${response.status} from ${apiUrl}`,
           details: data
         });
       }

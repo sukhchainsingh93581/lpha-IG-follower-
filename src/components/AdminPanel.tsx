@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { collection, onSnapshot, query, orderBy, limit, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, getDoc, writeBatch, getDocs } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, rtdb } from '../firebase';
+import { ref, onValue, remove, set } from 'firebase/database';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Users, 
@@ -33,7 +34,8 @@ import {
   UserMinus,
   ExternalLink,
   Phone,
-  Mail
+  Mail,
+  User
 } from 'lucide-react';
 import { formatCurrency } from '../utils';
 import Swal from 'sweetalert2';
@@ -42,7 +44,7 @@ interface AdminPanelProps {
   onBack: () => void;
 }
 
-type AdminView = 'dashboard' | 'services' | 'app_management' | 'orders' | 'payments' | 'notifications' | 'user_management';
+type AdminView = 'dashboard' | 'services' | 'app_management' | 'orders' | 'payments' | 'notifications' | 'user_management' | 'security_monitor';
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   const [view, setView] = useState<AdminView>('dashboard');
@@ -71,6 +73,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     selectedUsers: [] as string[]
   });
   const [loading, setLoading] = useState(true);
+  const [securityTracking, setSecurityTracking] = useState<any[]>([]);
+  const [securitySearchQuery, setSecuritySearchQuery] = useState('');
+  const [pinnedDevices, setPinnedDevices] = useState<Record<string, boolean>>({});
+  const [signupLimitHours, setSignupLimitHours] = useState(24);
   const [currentTime, setCurrentTime] = useState(new Date());
 
   // Update current time every second for the countdown timers
@@ -229,6 +235,39 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
       setFundRequests(requests);
     });
 
+    // Real-time Security Tracking
+    const securityRef = ref(rtdb, 'security_tracking/logs');
+    const unsubscribeSecurity = onValue(securityRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        const trackingList = Object.entries(data).map(([id, value]: [string, any]) => ({
+          id,
+          ...value
+        })).sort((a, b) => b.createdAt - a.createdAt);
+        setSecurityTracking(trackingList);
+      } else {
+        setSecurityTracking([]);
+      }
+    });
+
+    // Real-time Pinned Devices
+    const pinnedRef = ref(rtdb, 'pinned_devices');
+    const unsubscribePinned = onValue(pinnedRef, (snapshot) => {
+      if (snapshot.exists()) {
+        setPinnedDevices(snapshot.val());
+      } else {
+        setPinnedDevices({});
+      }
+    });
+
+    // Real-time Signup Limit Config
+    const limitRef = ref(rtdb, 'settings/signup_limit_hours');
+    const unsubscribeLimit = onValue(limitRef, (snapshot) => {
+      if (snapshot.exists()) {
+        setSignupLimitHours(snapshot.val());
+      }
+    });
+
       return () => {
         unsubscribeUsersList();
         unsubscribeNotifications();
@@ -238,6 +277,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
         unsubscribeAllOrders();
         unsubscribeRecent();
         unsubscribeFunds();
+        unsubscribeSecurity();
+        unsubscribePinned();
+        unsubscribeLimit();
       };
   }, []);
 
@@ -477,9 +519,90 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     if (result.isConfirmed) {
       try {
         await deleteDoc(doc(db, 'users', userId));
+        // Also remove from bypass if exists
+        await remove(ref(rtdb, `bypass_users/${userId}`));
         Swal.fire({ icon: 'success', title: 'Deleted!', toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 });
       } catch (error: any) {
         Swal.fire({ icon: 'error', title: 'Failed', text: error.message });
+      }
+    }
+  };
+
+  const handleTogglePinDevice = async (deviceId: string, currentStatus: boolean) => {
+    try {
+      await set(ref(rtdb, `pinned_devices/${deviceId}`), !currentStatus);
+      Swal.fire({
+        icon: 'success',
+        title: `Device ${!currentStatus ? 'Pinned' : 'Unpinned'}`,
+        toast: true,
+        position: 'top-end',
+        showConfirmButton: false,
+        timer: 2000,
+        background: 'var(--card-bg)',
+        color: 'var(--text-primary)'
+      });
+    } catch (error: any) {
+      Swal.fire({ icon: 'error', title: 'Error', text: error.message });
+    }
+  };
+
+  const handleDeleteTrackingRecord = async (recordId: string, deviceId?: string, ip?: string) => {
+    const result = await Swal.fire({
+      title: 'Delete Record?',
+      text: "This will also reset the limit for this device/IP.",
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#f43f5e',
+      confirmButtonText: 'Yes, Delete!'
+    });
+
+    if (result.isConfirmed) {
+      try {
+        await remove(ref(rtdb, `security_tracking/logs/${recordId}`));
+        if (deviceId) await remove(ref(rtdb, `security_tracking/last_device/${deviceId}`));
+        if (ip) await remove(ref(rtdb, `security_tracking/last_ip/${ip.replace(/\./g, '_')}`));
+        Swal.fire({ icon: 'success', title: 'Record Deleted', toast: true, position: 'top-end', showConfirmButton: false, timer: 2000 });
+      } catch (error: any) {
+        Swal.fire({ icon: 'error', title: 'Error', text: error.message });
+      }
+    }
+  };
+
+  const handleRefreshSecurity = () => {
+    Swal.fire({
+      icon: 'success',
+      title: 'Security Data Refreshed',
+      toast: true,
+      position: 'top-end',
+      showConfirmButton: false,
+      timer: 2000,
+      background: 'var(--card-bg)',
+      color: 'var(--text-primary)'
+    });
+  };
+
+  const handleUpdateLimitHours = async () => {
+    const { value: hours } = await Swal.fire({
+      title: 'Signup Limit (Hours)',
+      input: 'number',
+      inputLabel: 'Enter hours (e.g. 24, 48, 72)',
+      inputValue: signupLimitHours,
+      showCancelButton: true,
+      background: 'var(--card-bg)',
+      color: 'var(--text-primary)',
+      confirmButtonColor: 'var(--btn-bg)',
+      inputValidator: (value) => {
+        if (!value || parseInt(value) < 1) return 'Please enter a valid number of hours!';
+        return null;
+      }
+    });
+
+    if (hours) {
+      try {
+        await set(ref(rtdb, 'settings/signup_limit_hours'), parseInt(hours));
+        Swal.fire({ icon: 'success', title: 'Limit Updated', toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 });
+      } catch (error: any) {
+        Swal.fire({ icon: 'error', title: 'Error', text: error.message });
       }
     }
   };
@@ -876,6 +999,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
               >
                 <Users className="w-5 h-5" />
                 User Management
+              </button>
+
+              <button
+                onClick={() => { setView('security_monitor'); setIsSidebarOpen(false); }}
+                className={`w-full flex items-center gap-4 p-4 rounded-2xl font-bold transition-all ${
+                  view === 'security_monitor' ? 'bg-cyan-50 text-cyan-600' : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                <ShieldAlert className="w-5 h-5" />
+                Security Monitor
               </button>
             </nav>
 
@@ -1738,6 +1871,189 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                     </div>
                   ))
               )}
+            </div>
+          </div>
+        )}
+
+        {view === 'security_monitor' && (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <h2 className="text-2xl font-black text-slate-800 tracking-tight">Security Monitor</h2>
+              <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                <button
+                  onClick={handleUpdateLimitHours}
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-cyan-50 text-cyan-600 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-cyan-100 transition-all"
+                >
+                  <Clock className="w-4 h-4" />
+                  Limit: {signupLimitHours}h
+                </button>
+                <button
+                  onClick={handleRefreshSecurity}
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-100 transition-all"
+                >
+                  <RefreshCcw className="w-4 h-4" />
+                  Refresh
+                </button>
+              </div>
+            </div>
+
+            {/* Search Bar */}
+            <div className="relative group">
+              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                <Search className="w-5 h-5 text-slate-400 group-focus-within:text-cyan-500 transition-colors" />
+              </div>
+              <input
+                type="text"
+                placeholder="Search by Name, Email, or Min Accounts (e.g. '2' for 3+ accounts)..."
+                value={securitySearchQuery}
+                onChange={(e) => setSecuritySearchQuery(e.target.value)}
+                className="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-[1.5rem] focus:outline-none focus:ring-4 focus:ring-cyan-500/10 focus:border-cyan-500 transition-all font-bold text-slate-600 placeholder:text-slate-300 shadow-sm"
+              />
+            </div>
+
+            <div className="space-y-4">
+              {(() => {
+                const filtered = securityTracking.filter(record => {
+                  if (!securitySearchQuery) return true;
+                  const query = securitySearchQuery.toLowerCase().trim();
+                  
+                  // Check if query is a number
+                  const queryNum = parseInt(query);
+                  if (!isNaN(queryNum) && query.match(/^\d+$/)) {
+                    return (record.count || 0) > queryNum;
+                  }
+                  
+                  // Search in accounts
+                  const hasMatchingAccount = record.accounts?.some((acc: any) => {
+                    if (typeof acc === 'object') {
+                      return (
+                        acc.name?.toLowerCase().includes(query) ||
+                        acc.email?.toLowerCase().includes(query) ||
+                        acc.uid?.toLowerCase().includes(query)
+                      );
+                    }
+                    return acc.toString().toLowerCase().includes(query);
+                  });
+                  
+                  return (
+                    hasMatchingAccount ||
+                    record.deviceId?.toLowerCase().includes(query) ||
+                    record.ip?.toLowerCase().includes(query)
+                  );
+                });
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="bg-white p-12 rounded-[2.5rem] border border-dashed border-slate-200 text-center">
+                      <ShieldCheck className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+                      <p className="text-slate-400 font-bold">No matching records found.</p>
+                    </div>
+                  );
+                }
+
+                return filtered.map((record) => (
+                  <div key={record.id} className="bg-white p-5 sm:p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                      <div className="space-y-2 min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[9px] font-black text-cyan-500 bg-cyan-50 px-2 py-0.5 rounded-full uppercase tracking-widest shrink-0">
+                            Device ID
+                          </span>
+                          <p className="font-mono text-[10px] sm:text-xs text-slate-600 truncate bg-slate-50 px-2 py-1 rounded-lg flex-1">{record.deviceId}</p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[9px] font-black text-purple-500 bg-purple-50 px-2 py-0.5 rounded-full uppercase tracking-widest shrink-0">
+                            IP Address
+                          </span>
+                          <p className="font-mono text-[10px] sm:text-xs text-slate-600 truncate bg-slate-50 px-2 py-1 rounded-lg flex-1">{record.ip}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 self-end sm:self-start bg-slate-50 p-1 rounded-2xl shrink-0">
+                        <button
+                          onClick={() => handleTogglePinDevice(record.deviceId, !!pinnedDevices[record.deviceId])}
+                          className={`p-2.5 rounded-xl transition-all ${pinnedDevices[record.deviceId] ? 'bg-cyan-500 text-white shadow-lg shadow-cyan-200' : 'text-slate-400 hover:bg-white hover:text-cyan-500'}`}
+                          title={pinnedDevices[record.deviceId] ? 'Unpin Device' : 'Pin Device'}
+                        >
+                          <Pin className={`w-4 h-4 sm:w-5 sm:h-5 ${pinnedDevices[record.deviceId] ? 'fill-current' : ''}`} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteTrackingRecord(record.id, record.deviceId, record.ip)}
+                          className="p-2.5 rounded-xl text-slate-400 hover:bg-white hover:text-rose-500 transition-all"
+                          title="Delete Record"
+                        >
+                          <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="bg-slate-50 p-4 rounded-2xl">
+                        <div className="flex items-center justify-between mb-1">
+                          <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Accounts ({record.count || 1})</p>
+                          {record.count > 1 && <span className="text-[10px] font-black text-emerald-500 bg-emerald-50 px-1.5 rounded">Multiple</span>}
+                        </div>
+                        <p className="font-bold text-slate-800 text-xs truncate">
+                          {(() => {
+                            const lastAcc = record.accounts && record.accounts.length > 0 
+                              ? record.accounts[record.accounts.length - 1] 
+                              : record.createdAccount;
+                            
+                            if (!lastAcc) return 'N/A';
+                            if (typeof lastAcc === 'object') return lastAcc.name || lastAcc.uid;
+                            return lastAcc;
+                          })()}
+                        </p>
+                      </div>
+                      <div className="bg-slate-50 p-4 rounded-2xl">
+                        <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Last Signup</p>
+                        <p className="font-bold text-slate-800 text-xs">
+                          {new Date(record.createdAt).toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    {record.accounts && record.accounts.length > 0 && (
+                      <div className="pt-2 border-t border-slate-100">
+                        <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-2">All Accounts on this Device</p>
+                        <div className="space-y-2">
+                          {record.accounts.map((acc: any, idx: number) => {
+                            const isObject = typeof acc === 'object';
+                            const uid = isObject ? acc.uid : acc;
+                            return (
+                              <div key={idx} className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-[9px] font-mono text-slate-400">UID: {uid.slice(0, 10)}...</span>
+                                  {isObject && acc.timestamp && (
+                                    <span className="text-[9px] text-slate-400">{new Date(acc.timestamp).toLocaleDateString()}</span>
+                                  )}
+                                </div>
+                                {isObject ? (
+                                  <div className="grid grid-cols-1 gap-1">
+                                    <div className="flex items-center gap-2">
+                                      <User className="w-3 h-3 text-cyan-500" />
+                                      <p className="text-xs font-bold text-slate-700">{acc.name}</p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <Mail className="w-3 h-3 text-purple-500" />
+                                      <p className="text-xs text-slate-600">{acc.email}</p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <Phone className="w-3 h-3 text-emerald-500" />
+                                      <p className="text-xs text-slate-600">{acc.phone}</p>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <p className="text-xs text-slate-600 italic">Old record - no details available</p>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))
+              })()}
             </div>
           </div>
         )}

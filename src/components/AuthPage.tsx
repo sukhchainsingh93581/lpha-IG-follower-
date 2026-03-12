@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { auth, db } from '../firebase';
+import React, { useState, useEffect } from 'react';
+import { auth, db, rtdb } from '../firebase';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, getDoc } from 'firebase/firestore';
+import { ref, get, set, push, update, query, orderByChild, equalTo } from 'firebase/database';
 import Swal from 'sweetalert2';
 import { motion, AnimatePresence } from 'motion/react';
 import { Mail, Lock, User, Phone, ArrowRight, Loader2 } from 'lucide-react';
@@ -15,6 +16,71 @@ const AuthPage = () => {
     phone: '',
     password: ''
   });
+
+  const getDeviceId = () => {
+    let deviceId = localStorage.getItem('luxe_device_id');
+    if (!deviceId) {
+      deviceId = 'dev_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      localStorage.setItem('luxe_device_id', deviceId);
+    }
+    return deviceId;
+  };
+
+  const getUserIp = async () => {
+    try {
+      const res = await fetch('https://api.ipify.org?format=json');
+      const data = await res.json();
+      return data.ip;
+    } catch (e) {
+      return 'unknown';
+    }
+  };
+
+  const checkSignupLimit = async (deviceId: string, ip: string) => {
+    // 1. Check if Device is Pinned (Admin Bypass)
+    const pinnedSnap = await get(ref(rtdb, `pinned_devices/${deviceId}`));
+    if (pinnedSnap.exists() && pinnedSnap.val() === true) {
+      return true; // Pinned device allowed to create multiple accounts
+    }
+
+    // Fetch configurable limit (default 24h)
+    const limitSnap = await get(ref(rtdb, 'settings/signup_limit_hours'));
+    const limitHours = limitSnap.exists() ? limitSnap.val() : 24;
+    const limitMs = limitHours * 60 * 60 * 1000;
+    const limitStartTime = Date.now() - limitMs;
+
+    const ipKey = ip.replace(/\./g, '_');
+    
+    // 2. Check by Device ID
+    const deviceSnap = await get(ref(rtdb, `security_tracking/last_device/${deviceId}`));
+    if (deviceSnap.exists()) {
+      const data = deviceSnap.val();
+      if (data.createdAt > limitStartTime) {
+        // Check if this specific user has bypass permission
+        const bypassSnap = await get(ref(rtdb, `bypass_users/${data.userId}`));
+        if (!(bypassSnap.exists() && bypassSnap.val() === true)) {
+          return false; // Limit reached
+        }
+      }
+    }
+
+    // 3. Check by IP
+    if (ip !== 'unknown') {
+      const ipSnap = await get(ref(rtdb, `security_tracking/last_ip/${ipKey}`));
+      if (ipSnap.exists()) {
+        const data = ipSnap.val();
+        if (data.createdAt > limitStartTime) {
+          // Check if this specific user has bypass permission
+          const bypassSnap = await get(ref(rtdb, `bypass_users/${data.userId}`));
+          if (!(bypassSnap.exists() && bypassSnap.val() === true)) {
+            return false; // Limit reached
+          }
+        }
+      }
+    }
+
+    return true; // No recent account found or bypass allowed
+  };
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,6 +100,15 @@ const AuthPage = () => {
           color: 'var(--text-primary)'
         });
       } else {
+        // Anti-fraud check
+        const deviceId = getDeviceId();
+        const ip = await getUserIp();
+        
+        const isAllowed = await checkSignupLimit(deviceId, ip);
+        if (!isAllowed) {
+          throw new Error("Multiple accounts are not allowed. Warning: If you try again, all your old accounts will be deleted.");
+        }
+
         const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
         const user = userCredential.user;
 
@@ -47,6 +122,51 @@ const AuthPage = () => {
           createdAt: serverTimestamp()
         });
 
+        // Store tracking data in RTDB
+        const timestamp = Date.now();
+        const ipKey = ip.replace(/\./g, '_');
+        
+        // 1. Store consolidated log for Admin
+        const logRef = ref(rtdb, `security_tracking/logs/${deviceId}`);
+        const logSnap = await get(logRef);
+        const newUserInfo = {
+          uid: user.uid,
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          timestamp
+        };
+
+        if (logSnap.exists()) {
+          const existing = logSnap.val();
+          const accounts = existing.accounts || [];
+          // If accounts was just strings before, we handle it
+          const updatedAccounts = Array.isArray(accounts) 
+            ? [...accounts, newUserInfo]
+            : [newUserInfo];
+
+          await update(logRef, {
+            ip,
+            accounts: updatedAccounts,
+            count: (existing.count || 1) + 1,
+            createdAt: timestamp // Update last signup time
+          });
+        } else {
+          await set(logRef, {
+            deviceId,
+            ip,
+            accounts: [newUserInfo],
+            count: 1,
+            createdAt: timestamp
+          });
+        }
+
+        // 2. Store pointers for fast lookup (Index-free)
+        await set(ref(rtdb, `security_tracking/last_device/${deviceId}`), { userId: user.uid, createdAt: timestamp });
+        if (ip !== 'unknown') {
+          await set(ref(rtdb, `security_tracking/last_ip/${ipKey}`), { userId: user.uid, createdAt: timestamp });
+        }
+
         Swal.fire({
           icon: 'success',
           title: 'Account Created!',
@@ -58,7 +178,7 @@ const AuthPage = () => {
     } catch (error: any) {
       Swal.fire({
         icon: 'error',
-        title: 'Authentication Failed',
+        title: isLogin ? 'Authentication Failed' : 'Registration Failed',
         text: error.message,
         background: 'var(--card-bg)',
         color: 'var(--text-primary)'
