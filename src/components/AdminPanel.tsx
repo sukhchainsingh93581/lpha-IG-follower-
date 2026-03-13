@@ -647,7 +647,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     const { value: reward } = await Swal.fire({
       title: 'Referral Reward (Coins)',
       input: 'number',
-      inputLabel: 'Enter coins to reward both users',
+      inputLabel: 'Enter total coins (will be split 50/50 between referrer and new user)',
       inputValue: referralReward,
       showCancelButton: true,
       background: 'var(--card-bg)',
@@ -989,7 +989,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
             animate={{ x: 0 }}
             exit={{ x: '-100%' }}
             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-            className="fixed top-0 left-0 bottom-0 w-72 bg-white z-[70] shadow-2xl p-6 flex flex-col"
+            className="fixed top-0 left-0 bottom-0 w-72 bg-white z-[70] shadow-2xl p-6 flex flex-col overflow-y-auto"
           >
             <div className="flex items-center justify-between mb-10">
               <h2 className="text-2xl font-black text-cyan-500 tracking-tighter">Admin Menu</h2>

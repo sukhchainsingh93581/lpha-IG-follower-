@@ -45,12 +45,14 @@ const ReferPage: React.FC<ReferPageProps> = ({ onBack }) => {
   const referralLink = `https://www.appcreator24.com/app3949606-owhxz0?ref=${rtdbData?.referralCode || ''}`;
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(referralLink);
+    const code = rtdbData?.referralCode || '';
+    navigator.clipboard.writeText(code);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
     Swal.fire({
       icon: 'success',
-      title: 'Link Copied!',
+      title: 'Code Copied!',
+      text: `Referral code ${code} copied to clipboard`,
       toast: true,
       position: 'top-end',
       showConfirmButton: false,

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { auth, db, rtdb } from '../firebase';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp, getDoc } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, getDoc, updateDoc } from 'firebase/firestore';
 import { ref, get, set, push, update, query, orderByChild, equalTo, runTransaction } from 'firebase/database';
 import Swal from 'sweetalert2';
 import { motion, AnimatePresence } from 'motion/react';
@@ -135,9 +135,20 @@ const AuthPage = () => {
             const totalReward = rewardSnap.exists() ? rewardSnap.val() : 6;
             const rewardPerUser = totalReward / 2;
 
-            // Reward Referrer
+            // Reward Referrer (RTDB)
             const referrerCoinsRef = ref(rtdb, `users/${referrerId}/coins`);
             await runTransaction(referrerCoinsRef, (current) => (current || 0) + rewardPerUser);
+
+            // Reward Referrer (Firestore)
+            const referrerDocRef = doc(db, 'users', referrerId);
+            const referrerSnap = await getDoc(referrerDocRef);
+            if (referrerSnap.exists()) {
+              const currentBalance = referrerSnap.data().walletBalance || 0;
+              await updateDoc(referrerDocRef, {
+                walletBalance: currentBalance + rewardPerUser,
+                updatedAt: serverTimestamp()
+              });
+            }
 
             // Create tracking record
             const referralTrackRef = push(ref(rtdb, 'referrals'));
