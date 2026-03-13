@@ -78,7 +78,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   const [securitySearchQuery, setSecuritySearchQuery] = useState('');
   const [pinnedDevices, setPinnedDevices] = useState<Record<string, boolean>>({});
   const [signupLimitHours, setSignupLimitHours] = useState(24);
-  const [referralReward, setReferralReward] = useState(10);
+  const [referralReward, setReferralReward] = useState(6);
   const [referralLogs, setReferralLogs] = useState<any[]>([]);
   const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -272,7 +272,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     });
 
     // Real-time Referral Reward Config
-    const rewardRef = ref(rtdb, 'settings/referral_reward');
+    const rewardRef = ref(rtdb, 'settings/referralReward');
     const unsubscribeReward = onValue(rewardRef, (snapshot) => {
       if (snapshot.exists()) {
         setReferralReward(snapshot.val());
@@ -661,7 +661,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
 
     if (reward !== undefined) {
       try {
-        await set(ref(rtdb, 'settings/referral_reward'), parseInt(reward));
+        await set(ref(rtdb, 'settings/referralReward'), parseInt(reward));
         Swal.fire({ icon: 'success', title: 'Reward Updated', toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 });
       } catch (error: any) {
         Swal.fire({ icon: 'error', title: 'Error', text: error.message });

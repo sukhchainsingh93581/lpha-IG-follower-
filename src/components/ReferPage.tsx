@@ -14,9 +14,18 @@ const ReferPage: React.FC<ReferPageProps> = ({ onBack }) => {
   const { user, rtdbData } = useAuth();
   const [totalInvites, setTotalInvites] = useState(0);
   const [copied, setCopied] = useState(false);
+  const [rewardAmount, setRewardAmount] = useState(6);
 
   useEffect(() => {
     if (!user) return;
+
+    // Fetch dynamic reward
+    const rewardRef = ref(rtdb, 'settings/referralReward');
+    get(rewardRef).then((snapshot) => {
+      if (snapshot.exists()) {
+        setRewardAmount(snapshot.val());
+      }
+    });
 
     const referralsRef = ref(rtdb, 'referrals');
     const q = query(referralsRef, orderByChild('referrerId'), equalTo(user.uid));
@@ -56,7 +65,7 @@ const ReferPage: React.FC<ReferPageProps> = ({ onBack }) => {
 ✨ Boost your Instagram, Facebook, and YouTube presence instantly.
 💰 Get high-quality followers, likes, and views at the best prices.
 🔒 100% Secure, Fast Delivery, and 24/7 Premium Support.
-🎁 Join now using my link and get 10 coins as a welcome bonus!
+🎁 Join now using my link and get ${rewardAmount / 2} coins as a welcome bonus!
 🔥 Don't wait, start your growth journey today!
 
 Use my referral code: ${rtdbData?.referralCode}
@@ -99,7 +108,7 @@ Join here: ${referralLink}`;
         </div>
         <h3 className="text-2xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Invite Friends & Earn Coins</h3>
         <p className="opacity-60 text-sm mb-8" style={{ color: 'var(--text-primary)' }}>
-          Share your referral code with friends. When they sign up, both of you get 10 coins!
+          Share your referral code with friends. When they sign up, both of you get {rewardAmount / 2} coins!
         </p>
 
         <div className="space-y-6">

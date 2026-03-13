@@ -130,40 +130,83 @@ const AuthPage = () => {
             const referrerId = Object.keys(referrerData)[0];
             referredBy = referrerId;
 
-            // Reward Referrer (+10 coins)
+            // Fetch dynamic reward from settings
+            const rewardSnap = await get(ref(rtdb, 'settings/referralReward'));
+            const totalReward = rewardSnap.exists() ? rewardSnap.val() : 6;
+            const rewardPerUser = totalReward / 2;
+
+            // Reward Referrer
             const referrerCoinsRef = ref(rtdb, `users/${referrerId}/coins`);
-            await runTransaction(referrerCoinsRef, (current) => (current || 0) + 10);
+            await runTransaction(referrerCoinsRef, (current) => (current || 0) + rewardPerUser);
 
             // Create tracking record
             const referralTrackRef = push(ref(rtdb, 'referrals'));
             await set(referralTrackRef, {
               referrerId,
               newUserId: user.uid,
-              reward: 10,
+              reward: rewardPerUser,
               time: timestamp
             });
+
+            // Update user record in RTDB
+            await set(ref(rtdb, `users/${user.uid}`), {
+              name: formData.name,
+              email: formData.email,
+              coins: rewardPerUser,
+              referralCode: myReferralCode,
+              referredBy: referredBy,
+              createdAt: timestamp
+            });
+
+            // Update user document in Firestore
+            await setDoc(doc(db, 'users', user.uid), {
+              name: formData.name,
+              email: formData.email,
+              phone: formData.phone,
+              walletBalance: rewardPerUser,
+              selectedTheme: 'premium',
+              createdAt: serverTimestamp()
+            });
+          } else {
+            // No valid referral found, create normal record
+            await set(ref(rtdb, `users/${user.uid}`), {
+              name: formData.name,
+              email: formData.email,
+              coins: 0,
+              referralCode: myReferralCode,
+              referredBy: null,
+              createdAt: timestamp
+            });
+
+            await setDoc(doc(db, 'users', user.uid), {
+              name: formData.name,
+              email: formData.email,
+              phone: formData.phone,
+              walletBalance: 0,
+              selectedTheme: 'premium',
+              createdAt: serverTimestamp()
+            });
           }
+        } else {
+          // No referral code at all
+          await set(ref(rtdb, `users/${user.uid}`), {
+            name: formData.name,
+            email: formData.email,
+            coins: 0,
+            referralCode: myReferralCode,
+            referredBy: null,
+            createdAt: timestamp
+          });
+
+          await setDoc(doc(db, 'users', user.uid), {
+            name: formData.name,
+            email: formData.email,
+            phone: formData.phone,
+            walletBalance: 0,
+            selectedTheme: 'premium',
+            createdAt: serverTimestamp()
+          });
         }
-
-        // Create user record in RTDB as requested
-        await set(ref(rtdb, `users/${user.uid}`), {
-          name: formData.name,
-          email: formData.email,
-          coins: referredBy ? 10 : 0, // New user gets 10 if referred
-          referralCode: myReferralCode,
-          referredBy: referredBy,
-          createdAt: timestamp
-        });
-
-        // Create user document in Firestore (keeping existing logic for compatibility)
-        await setDoc(doc(db, 'users', user.uid), {
-          name: formData.name,
-          email: formData.email,
-          phone: formData.phone,
-          walletBalance: referredBy ? 10 : 0, // Sync with coins
-          selectedTheme: 'premium',
-          createdAt: serverTimestamp()
-        });
 
         localStorage.removeItem('pending_referral_code');
 
