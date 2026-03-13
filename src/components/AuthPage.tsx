@@ -2,14 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { auth, db, rtdb } from '../firebase';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp, getDoc } from 'firebase/firestore';
-import { ref, get, set, push, update, query, orderByChild, equalTo } from 'firebase/database';
+import { ref, get, set, push, update, query, orderByChild, equalTo, runTransaction } from 'firebase/database';
 import Swal from 'sweetalert2';
 import { motion, AnimatePresence } from 'motion/react';
-import { Mail, Lock, User, Phone, ArrowRight, Loader2 } from 'lucide-react';
+import { Mail, Lock, User, Phone, ArrowRight, Loader2, Gift } from 'lucide-react';
 
 const AuthPage = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [showReferralInput, setShowReferralInput] = useState(false);
+  const [manualReferralCode, setManualReferralCode] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -103,6 +105,7 @@ const AuthPage = () => {
         // Anti-fraud check
         const deviceId = getDeviceId();
         const ip = await getUserIp();
+        const timestamp = Date.now();
         
         const isAllowed = await checkSignupLimit(deviceId, ip);
         if (!isAllowed) {
@@ -112,18 +115,59 @@ const AuthPage = () => {
         const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
         const user = userCredential.user;
 
-        // Create user document in Firestore
+        // Referral Logic
+        const pendingRefCode = manualReferralCode || localStorage.getItem('pending_referral_code');
+        let referredBy = null;
+        const myReferralCode = 'REF' + Math.random().toString(36).substring(2, 7).toUpperCase();
+
+        if (pendingRefCode) {
+          const usersRef = ref(rtdb, 'users');
+          const q = query(usersRef, orderByChild('referralCode'), equalTo(pendingRefCode));
+          const snapshot = await get(q);
+          
+          if (snapshot.exists()) {
+            const referrerData = snapshot.val();
+            const referrerId = Object.keys(referrerData)[0];
+            referredBy = referrerId;
+
+            // Reward Referrer (+10 coins)
+            const referrerCoinsRef = ref(rtdb, `users/${referrerId}/coins`);
+            await runTransaction(referrerCoinsRef, (current) => (current || 0) + 10);
+
+            // Create tracking record
+            const referralTrackRef = push(ref(rtdb, 'referrals'));
+            await set(referralTrackRef, {
+              referrerId,
+              newUserId: user.uid,
+              reward: 10,
+              time: timestamp
+            });
+          }
+        }
+
+        // Create user record in RTDB as requested
+        await set(ref(rtdb, `users/${user.uid}`), {
+          name: formData.name,
+          email: formData.email,
+          coins: referredBy ? 10 : 0, // New user gets 10 if referred
+          referralCode: myReferralCode,
+          referredBy: referredBy,
+          createdAt: timestamp
+        });
+
+        // Create user document in Firestore (keeping existing logic for compatibility)
         await setDoc(doc(db, 'users', user.uid), {
           name: formData.name,
           email: formData.email,
           phone: formData.phone,
-          walletBalance: 0,
+          walletBalance: referredBy ? 10 : 0, // Sync with coins
           selectedTheme: 'premium',
           createdAt: serverTimestamp()
         });
 
+        localStorage.removeItem('pending_referral_code');
+
         // Store tracking data in RTDB
-        const timestamp = Date.now();
         const ipKey = ip.replace(/\./g, '_');
         
         // 1. Store consolidated log for Admin
@@ -262,6 +306,38 @@ const AuthPage = () => {
               onChange={(e) => setFormData({ ...formData, password: e.target.value })}
             />
           </div>
+
+          {!isLogin && (
+            <div className="space-y-3">
+              {!showReferralInput ? (
+                <button
+                  type="button"
+                  onClick={() => setShowReferralInput(true)}
+                  className="text-xs font-medium opacity-60 hover:opacity-100 transition-opacity flex items-center gap-1 mx-auto"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  <Gift className="w-3 h-3" />
+                  Have a referral code?
+                </button>
+              ) : (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="relative"
+                >
+                  <Gift className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 opacity-40" style={{ color: 'var(--text-primary)' }} />
+                  <input
+                    type="text"
+                    placeholder="Referral Code (Optional)"
+                    className="w-full bg-white/10 border border-white/20 rounded-xl py-3 pl-10 pr-4 focus:outline-none focus:border-white/50 transition-colors uppercase"
+                    style={{ color: 'var(--text-primary)' }}
+                    value={manualReferralCode}
+                    onChange={(e) => setManualReferralCode(e.target.value.toUpperCase())}
+                  />
+                </motion.div>
+              )}
+            </div>
+          )}
 
           <button
             disabled={loading}

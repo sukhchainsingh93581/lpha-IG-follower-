@@ -7,6 +7,7 @@ import OrdersPage from './components/OrdersPage';
 import WalletPage from './components/WalletPage';
 import NotificationsPage from './components/NotificationsPage';
 import ProfilePage from './components/ProfilePage';
+import ReferPage from './components/ReferPage';
 import BottomNav from './components/BottomNav';
 import AdminPanel from './components/AdminPanel';
 import { motion, AnimatePresence } from 'motion/react';
@@ -21,8 +22,17 @@ const AppContent = () => {
   const { user, userData, loading } = useAuth();
   const [activeTab, setActiveTab] = useState('home');
   const [isAdminView, setIsAdminView] = useState(false);
+  const [showReferPage, setShowReferPage] = useState(false);
   const [appName, setAppName] = useState('InstaBoost');
   const [isMaintenanceMode, setIsMaintenanceMode] = useState(false);
+
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const refCode = urlParams.get('ref');
+    if (refCode) {
+      localStorage.setItem('pending_referral_code', refCode);
+    }
+  }, []);
 
   useEffect(() => {
     const syncServices = async () => {
@@ -193,12 +203,19 @@ const AppContent = () => {
   }
 
   const renderPage = () => {
+    if (showReferPage) {
+      return <ReferPage onBack={() => setShowReferPage(false)} />;
+    }
+
     switch (activeTab) {
       case 'home': return <HomePage onOrderSuccess={() => setActiveTab('orders')} />;
       case 'orders': return <OrdersPage />;
       case 'wallet': return <WalletPage />;
       case 'notifications': return <NotificationsPage />;
-      case 'profile': return <ProfilePage onAdminAccess={() => setIsAdminView(true)} />;
+      case 'profile': return <ProfilePage 
+        onAdminAccess={() => setIsAdminView(true)} 
+        onReferAccess={() => setShowReferPage(true)}
+      />;
       default: return <HomePage />;
     }
   };
@@ -226,7 +243,10 @@ const AppContent = () => {
         </motion.div>
       </AnimatePresence>
       
-      <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />
+      <BottomNav activeTab={activeTab} setActiveTab={(tab) => {
+        setActiveTab(tab);
+        setShowReferPage(false);
+      }} />
     </div>
   );
 };

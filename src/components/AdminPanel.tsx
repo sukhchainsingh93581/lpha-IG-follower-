@@ -35,7 +35,8 @@ import {
   ExternalLink,
   Phone,
   Mail,
-  User
+  User,
+  Gift
 } from 'lucide-react';
 import { formatCurrency } from '../utils';
 import Swal from 'sweetalert2';
@@ -44,7 +45,7 @@ interface AdminPanelProps {
   onBack: () => void;
 }
 
-type AdminView = 'dashboard' | 'services' | 'app_management' | 'orders' | 'payments' | 'notifications' | 'user_management' | 'security_monitor';
+type AdminView = 'dashboard' | 'services' | 'app_management' | 'orders' | 'payments' | 'notifications' | 'user_management' | 'security_monitor' | 'referral_management';
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   const [view, setView] = useState<AdminView>('dashboard');
@@ -77,6 +78,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   const [securitySearchQuery, setSecuritySearchQuery] = useState('');
   const [pinnedDevices, setPinnedDevices] = useState<Record<string, boolean>>({});
   const [signupLimitHours, setSignupLimitHours] = useState(24);
+  const [referralReward, setReferralReward] = useState(10);
+  const [referralLogs, setReferralLogs] = useState<any[]>([]);
   const [currentTime, setCurrentTime] = useState(new Date());
 
   // Update current time every second for the countdown timers
@@ -268,6 +271,37 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
       }
     });
 
+    // Real-time Referral Reward Config
+    const rewardRef = ref(rtdb, 'settings/referral_reward');
+    const unsubscribeReward = onValue(rewardRef, (snapshot) => {
+      if (snapshot.exists()) {
+        setReferralReward(snapshot.val());
+      }
+    });
+
+    // Real-time Referral Logs
+    const referralsRef = ref(rtdb, 'referrals');
+    const unsubscribeReferrals = onValue(referralsRef, async (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        const logs = await Promise.all(Object.entries(data).map(async ([id, value]: [string, any]) => {
+          // Fetch user details for referrer and new user
+          const referrerSnap = await getDoc(doc(db, 'users', value.referrerId));
+          const newUserSnap = await getDoc(doc(db, 'users', value.newUserId));
+          
+          return {
+            id,
+            ...value,
+            referrer: referrerSnap.exists() ? referrerSnap.data() : { name: 'Unknown', email: 'N/A', phone: 'N/A' },
+            newUser: newUserSnap.exists() ? newUserSnap.data() : { name: 'Unknown', email: 'N/A', phone: 'N/A' }
+          };
+        }));
+        setReferralLogs(logs.sort((a, b) => b.time - a.time));
+      } else {
+        setReferralLogs([]);
+      }
+    });
+
       return () => {
         unsubscribeUsersList();
         unsubscribeNotifications();
@@ -280,6 +314,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
         unsubscribeSecurity();
         unsubscribePinned();
         unsubscribeLimit();
+        unsubscribeReward();
+        unsubscribeReferrals();
       };
   }, []);
 
@@ -601,6 +637,32 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
       try {
         await set(ref(rtdb, 'settings/signup_limit_hours'), parseInt(hours));
         Swal.fire({ icon: 'success', title: 'Limit Updated', toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 });
+      } catch (error: any) {
+        Swal.fire({ icon: 'error', title: 'Error', text: error.message });
+      }
+    }
+  };
+
+  const handleUpdateReferralReward = async () => {
+    const { value: reward } = await Swal.fire({
+      title: 'Referral Reward (Coins)',
+      input: 'number',
+      inputLabel: 'Enter coins to reward both users',
+      inputValue: referralReward,
+      showCancelButton: true,
+      background: 'var(--card-bg)',
+      color: 'var(--text-primary)',
+      confirmButtonColor: 'var(--btn-bg)',
+      inputValidator: (value) => {
+        if (!value || parseInt(value) < 0) return 'Please enter a valid number of coins!';
+        return null;
+      }
+    });
+
+    if (reward !== undefined) {
+      try {
+        await set(ref(rtdb, 'settings/referral_reward'), parseInt(reward));
+        Swal.fire({ icon: 'success', title: 'Reward Updated', toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 });
       } catch (error: any) {
         Swal.fire({ icon: 'error', title: 'Error', text: error.message });
       }
@@ -1010,6 +1072,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                 <ShieldAlert className="w-5 h-5" />
                 Security Monitor
               </button>
+
+              <button
+                onClick={() => { setView('referral_management'); setIsSidebarOpen(false); }}
+                className={`w-full flex items-center gap-4 p-4 rounded-2xl font-bold transition-all ${
+                  view === 'referral_management' ? 'bg-cyan-50 text-cyan-600' : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                <Gift className="w-5 h-5" />
+                Referral Management
+              </button>
             </nav>
 
             <div className="pt-6 border-t border-slate-100">
@@ -1036,6 +1108,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                view === 'orders' ? 'Order Management' :
                view === 'payments' ? 'Payment Management' :
                view === 'notifications' ? 'Notifications' :
+               view === 'referral_management' ? 'Referral Management' :
                'User Management'}
             </h1>
             <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Admin Panel</p>
@@ -2054,6 +2127,94 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                   </div>
                 ))
               })()}
+            </div>
+          </div>
+        )}
+
+        {view === 'referral_management' && (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <h2 className="text-2xl font-black text-slate-800 tracking-tight">Referral Management</h2>
+              <button
+                onClick={handleUpdateReferralReward}
+                className="flex items-center justify-center gap-2 px-6 py-3 bg-cyan-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg shadow-cyan-200"
+              >
+                <Gift className="w-4 h-4" />
+                Set Reward: {referralReward} Coins
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {referralLogs.length === 0 ? (
+                <div className="bg-white p-12 rounded-[2.5rem] border border-dashed border-slate-200 text-center">
+                  <Gift className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+                  <p className="text-slate-400 font-bold">No referral records found.</p>
+                </div>
+              ) : (
+                referralLogs.map((log) => (
+                  <div key={log.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-6">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                          {new Date(log.time).toLocaleString()}
+                        </p>
+                      </div>
+                      <div className="bg-emerald-50 text-emerald-600 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">
+                        Reward: {log.reward} Coins
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* Referrer Info */}
+                      <div className="space-y-3">
+                        <p className="text-[10px] font-black text-cyan-500 uppercase tracking-widest flex items-center gap-2">
+                          <User className="w-3 h-3" />
+                          Referrer (Old User)
+                        </p>
+                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-2">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-cyan-100 flex items-center justify-center text-cyan-600 font-bold text-xs uppercase">
+                              {log.referrer.name?.[0] || 'U'}
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold text-slate-800">{log.referrer.name}</p>
+                              <p className="text-[10px] text-slate-500">{log.referrer.email}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 pt-2 border-t border-slate-200/50">
+                            <Phone className="w-3 h-3 text-slate-400" />
+                            <p className="text-xs font-medium text-slate-600">{log.referrer.phone || 'No Phone'}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* New User Info */}
+                      <div className="space-y-3">
+                        <p className="text-[10px] font-black text-purple-500 uppercase tracking-widest flex items-center gap-2">
+                          <Plus className="w-3 h-3" />
+                          Referred (New User)
+                        </p>
+                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-2">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 font-bold text-xs uppercase">
+                              {log.newUser.name?.[0] || 'U'}
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold text-slate-800">{log.newUser.name}</p>
+                              <p className="text-[10px] text-slate-500">{log.newUser.email}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 pt-2 border-t border-slate-200/50">
+                            <Phone className="w-3 h-3 text-slate-400" />
+                            <p className="text-xs font-medium text-slate-600">{log.newUser.phone || 'No Phone'}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         )}

@@ -6,14 +6,15 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { ThemeType } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { User, Mail, Phone, LogOut, Palette, Check, Edit2, Save, X, ChevronRight, ShieldCheck } from 'lucide-react';
+import { User, Mail, Phone, LogOut, Palette, Check, Edit2, Save, X, ChevronRight, ShieldCheck, Gift } from 'lucide-react';
 import Swal from 'sweetalert2';
 
 interface ProfilePageProps {
   onAdminAccess?: () => void;
+  onReferAccess?: () => void;
 }
 
-const ProfilePage: React.FC<ProfilePageProps> = ({ onAdminAccess }) => {
+const ProfilePage: React.FC<ProfilePageProps> = ({ onAdminAccess, onReferAccess }) => {
   const { userData, user } = useAuth();
   const { theme, setTheme } = useTheme();
   const [isEditing, setIsEditing] = useState(false);
@@ -202,6 +203,30 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onAdminAccess }) => {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Refer & Earn Box */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2 mb-2">
+          <Gift className="w-5 h-5 opacity-60" style={{ color: 'var(--text-primary)' }} />
+          <h3 className="font-bold text-lg" style={{ color: 'var(--text-primary)' }}>Refer & Earn</h3>
+        </div>
+
+        <button
+          onClick={onReferAccess}
+          className="w-full glass rounded-3xl p-6 flex items-center justify-between premium-shadow hover:bg-white/5 transition-all group"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center border border-white/10">
+              <Gift className="w-6 h-6 opacity-80" style={{ color: 'var(--text-primary)' }} />
+            </div>
+            <div className="text-left">
+              <p className="text-[10px] opacity-40 uppercase tracking-widest mb-0.5" style={{ color: 'var(--text-primary)' }}>Invite Friends</p>
+              <span className="font-bold text-lg" style={{ color: 'var(--text-primary)' }}>Refer & Earn Coins</span>
+            </div>
+          </div>
+          <ChevronRight className="w-6 h-6 opacity-20 group-hover:opacity-60 transition-colors" style={{ color: 'var(--text-primary)' }} />
+        </button>
       </div>
 
       {/* Theme Selector Box */}
