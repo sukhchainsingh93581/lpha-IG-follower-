@@ -70,6 +70,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     title: '',
     message: '',
     bannerUrl: '',
+    actionUrl: '',
     targetType: 'all' as 'all' | 'specific',
     selectedUsers: [] as string[]
   });
@@ -116,11 +117,22 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
       for (const request of expiredPayments) {
         await deleteDoc(doc(db, 'fundRequests', request.id));
       }
+
+      // Cleanup Referrals after 12 hours if not pinned
+      const expiredReferrals = referralLogs.filter(log => {
+        if (log.pinned) return false;
+        const logTime = log.time;
+        return logTime < twelveHoursAgo.getTime();
+      });
+
+      for (const log of expiredReferrals) {
+        await remove(ref(rtdb, `referrals/${log.id}`));
+      }
     };
 
     const interval = setInterval(cleanupHistory, 60000); // Check every minute
     return () => clearInterval(interval);
-  }, [allOrders, fundRequests]);
+  }, [allOrders, fundRequests, referralLogs]);
   
   // App Management State
   const [appConfig, setAppConfig] = useState({
@@ -454,13 +466,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     return `${hours}h ${minutes}m ${seconds}s`;
   };
 
-  const handleSendNotification = async (data: { title: string, message: string, bannerUrl?: string, targetType: 'all' | 'specific', selectedUsers: string[] }) => {
+  const handleSendNotification = async (data: { title: string, message: string, bannerUrl?: string, actionUrl?: string, targetType: 'all' | 'specific', selectedUsers: string[] }) => {
     try {
       if (data.targetType === 'all') {
         await addDoc(collection(db, 'notifications'), {
           title: data.title,
           message: data.message,
           bannerUrl: data.bannerUrl || '',
+          actionUrl: data.actionUrl || '',
           isGlobal: true,
           createdAt: serverTimestamp()
         });
@@ -471,6 +484,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
             title: data.title,
             message: data.message,
             bannerUrl: data.bannerUrl || '',
+            actionUrl: data.actionUrl || '',
             isGlobal: false,
             createdAt: serverTimestamp()
           });
@@ -667,6 +681,46 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
         Swal.fire({ icon: 'error', title: 'Error', text: error.message });
       }
     }
+  };
+
+  const handleTogglePinReferral = async (id: string, currentPinned: boolean) => {
+    try {
+      await set(ref(rtdb, `referrals/${id}/pinned`), !currentPinned);
+      Swal.fire({ icon: 'success', title: currentPinned ? 'Unpinned' : 'Pinned', toast: true, position: 'top-end', showConfirmButton: false, timer: 2000 });
+    } catch (error: any) {
+      Swal.fire({ icon: 'error', title: 'Error', text: error.message });
+    }
+  };
+
+  const handleDeleteReferral = async (id: string) => {
+    const result = await Swal.fire({
+      title: 'Delete Record?',
+      text: 'This referral record will be permanently removed.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#ef4444'
+    });
+
+    if (result.isConfirmed) {
+      try {
+        await remove(ref(rtdb, `referrals/${id}`));
+        Swal.fire({ icon: 'success', title: 'Deleted', toast: true, position: 'top-end', showConfirmButton: false, timer: 2000 });
+      } catch (error: any) {
+        Swal.fire({ icon: 'error', title: 'Error', text: error.message });
+      }
+    }
+  };
+
+  const getReferralTimeLeft = (time: number) => {
+    const expiry = time + 12 * 60 * 60 * 1000;
+    const diff = expiry - currentTime.getTime();
+    if (diff <= 0) return 'Expired';
+    
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+    
+    return `${hours}h ${minutes}m ${seconds}s`;
   };
 
   const handleSaveConfig = async (e: React.FormEvent) => {
@@ -1720,6 +1774,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                   />
                 </div>
 
+                {notificationForm.bannerUrl && (
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Action Link (Optional)</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. https://youtube.com/video or app link"
+                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700"
+                      value={notificationForm.actionUrl}
+                      onChange={(e) => setNotificationForm({ ...notificationForm, actionUrl: e.target.value })}
+                    />
+                  </div>
+                )}
+
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Title</label>
                   <input
@@ -1796,7 +1863,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                       return Swal.fire({ icon: 'error', title: 'No Users Selected', text: 'Please select at least one user.' });
                     }
                     handleSendNotification(notificationForm);
-                    setNotificationForm({ title: '', message: '', bannerUrl: '', targetType: 'all', selectedUsers: [] });
+                    setNotificationForm({ title: '', message: '', bannerUrl: '', actionUrl: '', targetType: 'all', selectedUsers: [] });
                   }}
                   className="w-full bg-cyan-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-cyan-100 hover:scale-[1.02] active:scale-[0.98] transition-all"
                 >
@@ -1827,6 +1894,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                         </div>
                         <h4 className="font-black text-slate-800">{n.title}</h4>
                         <p className="text-sm text-slate-500 font-medium line-clamp-2">{n.message}</p>
+                        {n.actionUrl && (
+                          <p className="text-[10px] text-cyan-600 font-bold truncate mt-1">Link: {n.actionUrl}</p>
+                        )}
                       </div>
                       <button 
                         onClick={() => handleDeleteNotification(n.id)}
@@ -2152,16 +2222,50 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                 </div>
               ) : (
                 referralLogs.map((log) => (
-                  <div key={log.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-6">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                          {new Date(log.time).toLocaleString()}
-                        </p>
+                  <div key={log.id} className={`bg-white p-6 rounded-[2rem] border shadow-sm space-y-6 transition-all ${log.pinned ? 'border-amber-200 ring-2 ring-amber-100' : 'border-slate-100'}`}>
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <div className="flex items-center gap-2">
+                          <span className={`w-2 h-2 rounded-full animate-pulse ${log.pinned ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                            {new Date(log.time).toLocaleString()}
+                          </p>
+                        </div>
+                        {!log.pinned && (
+                          <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-100 rounded-full">
+                            <Clock className="w-3 h-3 text-slate-500" />
+                            <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
+                              {getReferralTimeLeft(log.time)}
+                            </span>
+                          </div>
+                        )}
+                        {log.pinned && (
+                          <div className="flex items-center gap-1.5 px-3 py-1 bg-amber-50 rounded-full">
+                            <Pin className="w-3 h-3 text-amber-500 fill-amber-500" />
+                            <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest">
+                              Pinned
+                            </span>
+                          </div>
+                        )}
                       </div>
-                      <div className="bg-emerald-50 text-emerald-600 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">
-                        Reward: {log.reward} Coins
+                      <div className="flex items-center justify-between sm:justify-end gap-3">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleTogglePinReferral(log.id, !!log.pinned)}
+                            className={`p-2 rounded-xl transition-all ${log.pinned ? 'bg-amber-100 text-amber-600' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}
+                          >
+                            <Pin className={`w-4 h-4 ${log.pinned ? 'fill-amber-600' : ''}`} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteReferral(log.id)}
+                            className="p-2 bg-rose-50 text-rose-500 rounded-xl hover:bg-rose-100 transition-all"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <div className="bg-emerald-50 text-emerald-600 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest whitespace-nowrap">
+                          Reward: {log.reward} Coins
+                        </div>
                       </div>
                     </div>
 

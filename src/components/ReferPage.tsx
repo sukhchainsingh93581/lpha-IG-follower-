@@ -19,11 +19,13 @@ const ReferPage: React.FC<ReferPageProps> = ({ onBack }) => {
   useEffect(() => {
     if (!user) return;
 
-    // Fetch dynamic reward
+    // Fetch dynamic reward in real-time
     const rewardRef = ref(rtdb, 'settings/referralReward');
-    get(rewardRef).then((snapshot) => {
+    const unsubReward = onValue(rewardRef, (snapshot) => {
       if (snapshot.exists()) {
         setRewardAmount(snapshot.val());
+      } else {
+        setRewardAmount(6); // Default fallback
       }
     });
 
@@ -38,6 +40,7 @@ const ReferPage: React.FC<ReferPageProps> = ({ onBack }) => {
     });
 
     return () => {
+      unsubReward();
       unsubInvites();
     };
   }, [user]);
@@ -78,12 +81,22 @@ Join here: ${referralLink}`;
         await navigator.share({
           title: 'Join LuxeServices',
           text: shareText,
+          url: referralLink,
         });
       } catch (err) {
-        console.error('Error sharing:', err);
+        // If user cancels or it fails, we don't necessarily want to force a copy
+        console.log('Share cancelled or failed:', err);
       }
     } else {
-      handleCopy();
+      // Fallback for browsers that don't support navigator.share (like desktop)
+      navigator.clipboard.writeText(shareText);
+      Swal.fire({
+        icon: 'success',
+        title: 'Invitation Copied!',
+        text: 'The full invitation message has been copied to your clipboard. You can now paste it in any app like WhatsApp or Telegram.',
+        background: 'var(--card-bg)',
+        color: 'var(--text-primary)'
+      });
     }
   };
 
@@ -125,7 +138,7 @@ Join here: ${referralLink}`;
               className="flex-1 glass rounded-2xl p-4 flex items-center justify-center gap-2 hover:bg-white/10 transition-all active:scale-95"
             >
               {copied ? <Check className="w-5 h-5 text-emerald-400" /> : <Copy className="w-5 h-5" />}
-              <span className="font-bold">Copy Link</span>
+              <span className="font-bold">Copy Code</span>
             </button>
             <button
               onClick={handleShare}

@@ -44,6 +44,7 @@ export interface Notification {
   title: string;
   message: string;
   bannerUrl?: string;
+  actionUrl?: string;
   isGlobal?: boolean;
   createdAt: any;
   userId?: string; // Optional for global notifications

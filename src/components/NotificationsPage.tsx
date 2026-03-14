@@ -5,12 +5,18 @@ import { useAuth } from '../contexts/AuthContext';
 import { Notification } from '../types';
 import { formatDate } from '../utils';
 import { motion, AnimatePresence } from 'motion/react';
-import { Bell, Info, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
+import { Bell, Info, AlertCircle, CheckCircle, Loader2, ExternalLink } from 'lucide-react';
 
 const NotificationsPage = () => {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const handleAction = (url?: string) => {
+    if (url) {
+      window.open(url, '_blank');
+    }
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -76,7 +82,10 @@ const NotificationsPage = () => {
                 className="glass rounded-2xl overflow-hidden premium-shadow border border-white/5 flex flex-col"
               >
                 {notif.bannerUrl && (
-                  <div className="w-full overflow-hidden border-b border-white/5">
+                  <div 
+                    className={`w-full overflow-hidden border-b border-white/5 ${notif.actionUrl ? 'cursor-pointer hover:opacity-90 transition-opacity' : ''}`}
+                    onClick={() => notif.actionUrl && handleAction(notif.actionUrl)}
+                  >
                     <img 
                       src={notif.bannerUrl} 
                       alt="Banner" 
@@ -94,7 +103,18 @@ const NotificationsPage = () => {
                       <h3 className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>{notif.title}</h3>
                       <span className="text-[10px] opacity-40 uppercase tracking-widest" style={{ color: 'var(--text-primary)' }}>{formatDate(notif.createdAt)}</span>
                     </div>
-                    <p className="text-xs opacity-60 leading-relaxed" style={{ color: 'var(--text-primary)' }}>{notif.message}</p>
+                    <p className="text-xs opacity-60 leading-relaxed mb-4" style={{ color: 'var(--text-primary)' }}>{notif.message}</p>
+                    
+                    {notif.actionUrl && (
+                      <button
+                        onClick={() => handleAction(notif.actionUrl)}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 transition-all text-[10px] font-black uppercase tracking-widest"
+                        style={{ color: 'var(--text-primary)' }}
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        Open Link
+                      </button>
+                    )}
                   </div>
                 </div>
               </motion.div>
