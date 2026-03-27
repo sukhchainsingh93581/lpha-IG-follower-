@@ -151,7 +151,7 @@ const EliteHub = ({ onBack, onGiveawayAccess, appName = 'Elite Hub' }: { onBack:
     
     const isFreeSpin = isEligible && spinsToday < maxSpins;
     const paidSpinCost = Number(spinnerConfig.paidSpinCost) || 0;
-    const currentBalance = userData?.walletBalance || userData?.balance || 0;
+    const currentBalance = userData?.walletBalance !== undefined ? userData?.walletBalance : (userData?.balance || 0);
 
     if (!isFreeSpin) {
       if (currentBalance < paidSpinCost) {

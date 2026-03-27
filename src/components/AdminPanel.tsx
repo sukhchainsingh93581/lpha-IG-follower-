@@ -452,7 +452,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
         
         if (userSnap.exists()) {
           const userData = userSnap.data();
-          const currentBalance = userData.walletBalance || userData.balance || 0;
+          const currentBalance = userData.walletBalance !== undefined ? userData.walletBalance : (userData.balance || 0);
           const amountToAdd = Number(requestData.amount);
 
           await updateDoc(userRef, {
@@ -507,9 +507,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
         
         if (userSnap.exists()) {
           const userData = userSnap.data();
+          const currentBalance = userData.walletBalance !== undefined ? userData.walletBalance : (userData.balance || 0);
           await updateDoc(userRef, {
-            walletBalance: (userData.walletBalance || userData.balance || 0) + (orderData.totalCost || 0),
-            balance: (userData.walletBalance || userData.balance || 0) + (orderData.totalCost || 0),
+            walletBalance: currentBalance + (orderData.totalCost || 0),
+            balance: currentBalance + (orderData.totalCost || 0),
             updatedAt: serverTimestamp()
           });
           Swal.fire({ icon: 'info', title: 'Order Cancelled', text: `Refunded ${formatCurrency(orderData.totalCost)} to user.`, toast: true, position: 'top-end', showConfirmButton: false, timer: 4000 });
@@ -658,7 +659,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     if (newBalance !== undefined) {
       try {
         await updateDoc(doc(db, 'users', userId), {
-          walletBalance: Number(newBalance)
+          walletBalance: Number(newBalance),
+          balance: Number(newBalance),
+          updatedAt: serverTimestamp()
         });
         Swal.fire({ icon: 'success', title: 'Updated!', toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 });
       } catch (error: any) {

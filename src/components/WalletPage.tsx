@@ -137,7 +137,7 @@ const WalletPage = () => {
             <CreditCard className="w-10 h-10 text-white/80" />
             <div className="text-right">
               <p className="text-xs text-white/60 uppercase tracking-widest mb-1">{t('wallet_balance')}</p>
-              <h2 className="text-4xl font-bold">{formatCurrency(userData?.walletBalance || 0)}</h2>
+              <h2 className="text-4xl font-bold">{formatCurrency(userData?.walletBalance !== undefined ? userData?.walletBalance : (userData?.balance || 0))}</h2>
             </div>
           </div>
           

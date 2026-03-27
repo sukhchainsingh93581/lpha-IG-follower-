@@ -292,7 +292,7 @@ const AppContent = () => {
         </h1>
         <div className="flex items-center gap-2 bg-cyan-50 px-3 py-1.5 rounded-full border border-cyan-100">
           <Coins className="w-4 h-4 text-cyan-500" />
-          <span className="text-sm font-bold text-cyan-600">{formatCurrency(userData?.walletBalance || 0)}</span>
+          <span className="text-sm font-bold text-cyan-600">{formatCurrency(userData?.walletBalance !== undefined ? userData?.walletBalance : (userData?.balance || 0))}</span>
         </div>
       </header>
 

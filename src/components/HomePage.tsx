@@ -153,7 +153,7 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
       });
     }
 
-    const currentBalance = Number(userData.walletBalance || userData.balance || 0);
+    const currentBalance = Number(userData.walletBalance !== undefined ? userData.walletBalance : (userData.balance || 0));
     if (currentBalance < totalCost) {
       return Swal.fire({ 
         icon: 'error', 
@@ -175,7 +175,7 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
         if (!userSnap.exists()) throw new Error("User document not found!");
         
         const data = userSnap.data();
-        const currentBalance = Number(data.walletBalance || data.balance || 0);
+        const currentBalance = Number(data.walletBalance !== undefined ? data.walletBalance : (data.balance || 0));
         
         if (currentBalance < totalCost) {
           throw new Error(`Insufficient balance! You need ${formatCurrency(totalCost)} but have ${formatCurrency(currentBalance)}.`);
@@ -228,7 +228,7 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
           const userSnap = await transaction.get(userRef);
           if (userSnap.exists()) {
             const data = userSnap.data();
-            const currentBalance = Number(data.walletBalance || data.balance || 0);
+            const currentBalance = Number(data.walletBalance !== undefined ? data.walletBalance : (data.balance || 0));
             transaction.update(userRef, {
               walletBalance: currentBalance + totalCost,
               balance: currentBalance + totalCost
