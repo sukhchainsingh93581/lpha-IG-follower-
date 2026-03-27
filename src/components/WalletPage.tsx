@@ -6,9 +6,11 @@ import { Wallet, ArrowUpRight, CreditCard, History, X, QrCode, Send, Loader2, In
 import { db } from '../firebase';
 import { collection, addDoc, serverTimestamp, query, where, orderBy, onSnapshot, doc } from 'firebase/firestore';
 import Swal from 'sweetalert2';
+import { useTranslation } from '../contexts/LanguageContext';
 
 const WalletPage = () => {
   const { user, userData } = useAuth();
+  const { t } = useTranslation();
   const [isAddingFunds, setIsAddingFunds] = useState(false);
   const [amount, setAmount] = useState<number | ''>('');
   const [transactionId, setTransactionId] = useState('');
@@ -117,8 +119,8 @@ const WalletPage = () => {
   return (
     <div className="space-y-6">
       <header className="mb-8">
-        <h2 className="text-sm font-medium opacity-60 uppercase tracking-widest mb-1" style={{ color: 'var(--text-primary)' }}>Manage Your</h2>
-        <h1 className="text-3xl font-bold" style={{ color: 'var(--text-primary)' }}>Digital Wallet</h1>
+        <h2 className="text-sm font-medium opacity-60 uppercase tracking-widest mb-1" style={{ color: 'var(--text-primary)' }}>{t('manage_your')}</h2>
+        <h1 className="text-3xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('digital_wallet')}</h1>
       </header>
 
       {/* Premium Wallet Card */}
@@ -134,7 +136,7 @@ const WalletPage = () => {
           <div className="flex justify-between items-start">
             <CreditCard className="w-10 h-10 text-white/80" />
             <div className="text-right">
-              <p className="text-xs text-white/60 uppercase tracking-widest mb-1">Wallet Balance</p>
+              <p className="text-xs text-white/60 uppercase tracking-widest mb-1">{t('wallet_balance')}</p>
               <h2 className="text-4xl font-bold">{formatCurrency(userData?.walletBalance || 0)}</h2>
             </div>
           </div>
@@ -145,7 +147,7 @@ const WalletPage = () => {
               className="w-full bg-white/20 backdrop-blur-md py-4 rounded-2xl flex items-center justify-center gap-2 font-bold text-sm hover:bg-white/30 transition-colors"
             >
               <ArrowUpRight className="w-5 h-5" />
-              Add Funds
+              {t('add_funds')}
             </button>
           </div>
         </div>
@@ -155,13 +157,13 @@ const WalletPage = () => {
       <div className="space-y-4">
         <div className="flex items-center gap-2 mb-2">
           <History className="w-5 h-5 opacity-60" style={{ color: 'var(--text-primary)' }} />
-          <h3 className="font-bold text-lg" style={{ color: 'var(--text-primary)' }}>Payment History</h3>
+          <h3 className="font-bold text-lg" style={{ color: 'var(--text-primary)' }}>{t('payment_history')}</h3>
         </div>
 
         <div className="grid gap-3">
           {requests.length === 0 ? (
             <div className="glass rounded-2xl p-8 text-center">
-              <p className="opacity-40 text-sm italic" style={{ color: 'var(--text-primary)' }}>No payment requests found.</p>
+              <p className="opacity-40 text-sm italic" style={{ color: 'var(--text-primary)' }}>{t('no_payment_requests')}</p>
             </div>
           ) : (
             requests.map((req) => (
@@ -216,8 +218,8 @@ const WalletPage = () => {
               </button>
 
               <div className="text-center mb-8">
-                <h2 className="text-2xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Add Funds</h2>
-                <p className="opacity-50 text-sm" style={{ color: 'var(--text-primary)' }}>Scan QR and pay, then enter details below</p>
+                <h2 className="text-2xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>{t('add_funds_modal_title')}</h2>
+                <p className="opacity-50 text-sm" style={{ color: 'var(--text-primary)' }}>{t('add_funds_modal_desc')}</p>
               </div>
 
               {/* QR Code Section */}
@@ -239,7 +241,7 @@ const WalletPage = () => {
                 
                 {appConfig.upiId && (
                   <div className="w-full mb-6">
-                    <p className="text-[10px] font-black opacity-40 uppercase tracking-widest mb-2 text-center" style={{ color: 'var(--text-primary)' }}>Or Pay via UPI ID</p>
+                    <p className="text-[10px] font-black opacity-40 uppercase tracking-widest mb-2 text-center" style={{ color: 'var(--text-primary)' }}>{t('or_pay_via_upi')}</p>
                     <div className="flex items-center gap-2 bg-white/5 border border-white/10 p-3 rounded-2xl">
                       <div className="flex-1 truncate font-mono text-sm opacity-80 px-2" style={{ color: 'var(--text-primary)' }}>
                         {appConfig.upiId}
@@ -250,7 +252,7 @@ const WalletPage = () => {
                         style={{ color: 'var(--text-primary)' }}
                       >
                         {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                        {copied ? 'Copied' : 'Copy'}
+                        {copied ? t('copied_text') : t('copy_text')}
                       </button>
                     </div>
                   </div>
@@ -258,14 +260,14 @@ const WalletPage = () => {
 
                 <div className="flex items-center gap-2 opacity-60 text-xs bg-white/5 px-4 py-2 rounded-full" style={{ color: 'var(--text-primary)' }}>
                   <QrCode className="w-4 h-4" />
-                  <span>Scan to Pay via UPI</span>
+                  <span>{t('scan_to_pay')}</span>
                 </div>
               </div>
 
               {/* Verification Form */}
               <form onSubmit={handleAddFunds} className="space-y-4">
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-widest opacity-40 ml-1" style={{ color: 'var(--text-primary)' }}>Amount Paid (₹)</label>
+                  <label className="text-xs font-bold uppercase tracking-widest opacity-40 ml-1" style={{ color: 'var(--text-primary)' }}>{t('amount_paid_label')}</label>
                   <input
                     type="number"
                     placeholder="Enter amount you paid"
@@ -279,7 +281,7 @@ const WalletPage = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-widest opacity-40 ml-1" style={{ color: 'var(--text-primary)' }}>Transaction ID (Tnx ID)</label>
+                  <label className="text-xs font-bold uppercase tracking-widest opacity-40 ml-1" style={{ color: 'var(--text-primary)' }}>{t('transaction_id_label')}</label>
                   <input
                     type="text"
                     placeholder="Enter payment reference ID"
@@ -302,7 +304,7 @@ const WalletPage = () => {
                   ) : (
                     <>
                       <Send className="w-5 h-5" />
-                      SUBMIT FOR VERIFICATION
+                      {t('submit_for_verification')}
                     </>
                   )}
                 </button>

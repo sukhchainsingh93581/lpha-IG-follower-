@@ -7,6 +7,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, getDoc } from "firebase/firestore";
+import admin from "firebase-admin";
+import cron from "node-cron";
 
 dotenv.config();
 
@@ -26,6 +28,44 @@ const firebaseConfig = {
 
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
+
+// Initialize Firebase Admin for background tasks
+if (!admin.apps.length) {
+  admin.initializeApp({
+    projectId: firebaseConfig.projectId,
+  });
+}
+
+// Chat Cleanup Task: Deletes messages older than 7 days
+const cleanupChat = async () => {
+  console.log("[Cron] Starting chat cleanup...");
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  
+  try {
+    const chatRef = admin.firestore().collection("global_chat");
+    const snapshot = await chatRef.where("createdAt", "<", admin.firestore.Timestamp.fromDate(sevenDaysAgo)).get();
+    
+    if (snapshot.empty) {
+      console.log("[Cron] No old messages to delete.");
+      return;
+    }
+
+    const batch = admin.firestore().batch();
+    snapshot.docs.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+
+    await batch.commit();
+    console.log(`[Cron] Deleted ${snapshot.size} old messages.`);
+  } catch (error) {
+    console.error("[Cron] Error cleaning up chat:", error);
+  }
+};
+
+// Schedule cleanup to run every day at midnight (00:00)
+// This ensures a rolling 7-day history as requested
+cron.schedule("0 0 * * *", cleanupChat);
 
 async function startServer() {
   const app = express();
@@ -192,6 +232,35 @@ async function startServer() {
       res.json(data);
     } catch (error: any) {
       console.error("Error fetching order status:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/balance", async (req, res) => {
+    const { apiKey, apiUrl } = await getSmmConfig();
+    if (!apiKey) {
+      return res.status(400).json({ error: "SMM API Key is missing." });
+    }
+    try {
+      const params = new URLSearchParams();
+      params.append('key', apiKey);
+      params.append('action', 'balance');
+
+      const response = await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "SMM-Reseller-App/1.0"
+        },
+        body: params,
+      });
+
+      const data = await response.json() as any;
+      if (!response.ok) {
+        return res.status(response.status).json(data);
+      }
+      res.json(data);
+    } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });

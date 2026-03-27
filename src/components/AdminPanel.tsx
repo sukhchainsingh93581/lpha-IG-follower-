@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { collection, onSnapshot, query, orderBy, limit, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, getDoc, writeBatch, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, limit, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, getDoc, writeBatch, getDocs, where, setDoc } from 'firebase/firestore';
 import { db, rtdb } from '../firebase';
 import { ref, onValue, remove, set } from 'firebase/database';
 import { motion, AnimatePresence } from 'motion/react';
@@ -27,6 +27,7 @@ import {
   Bell,
   Copy,
   Check,
+  ChevronDown,
   Pin,
   PinOff,
   ShieldAlert,
@@ -36,18 +37,25 @@ import {
   Phone,
   Mail,
   User,
-  Gift
+  Gift,
+  Disc
 } from 'lucide-react';
 import { formatCurrency } from '../utils';
+import { getCategoryIcon } from '../utils/categoryIcons';
+import { FONTS } from '../constants';
+import { languages, translations } from '../translations';
+import { useTranslation } from '../contexts/LanguageContext';
 import Swal from 'sweetalert2';
 
 interface AdminPanelProps {
   onBack: () => void;
 }
 
-type AdminView = 'dashboard' | 'services' | 'app_management' | 'orders' | 'payments' | 'notifications' | 'user_management' | 'security_monitor' | 'referral_management';
+type AdminView = 'dashboard' | 'services' | 'app_management' | 'orders' | 'payments' | 'notifications' | 'user_management' | 'security_monitor' | 'referral_management' | 'daily_giveaway' | 'spinner_management';
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
+  const { t: contextT } = useTranslation();
+  const t = (key: string) => translations.en[key] || key;
   const [view, setView] = useState<AdminView>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [stats, setStats] = useState({
@@ -82,6 +90,32 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   const [referralReward, setReferralReward] = useState(6);
   const [referralLogs, setReferralLogs] = useState<any[]>([]);
   const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Giveaway State
+  const [giveaways, setGiveaways] = useState<any[]>([]);
+  const [showGiveawayModal, setShowGiveawayModal] = useState(false);
+  const [editingGiveaway, setEditingGiveaway] = useState<any>(null);
+  const [giveawayForm, setGiveawayForm] = useState({
+    category: '',
+    serviceId: '',
+    quantity: '',
+    maxUsers: '',
+    refresh24h: true,
+    enabled: true
+  });
+
+  // Spinner State
+  const [spinnerConfig, setSpinnerConfig] = useState<any>({
+    options: Array(10).fill(null).map(() => ({ amount: 0, probability: 10 })),
+    eligibilityDays: 5,
+    maxSpinsPerDay: 1,
+    paidSpinCost: 10
+  });
+  const [spinnerLogs, setSpinnerLogs] = useState<any[]>([]);
+  const [giveawayParticipants, setGiveawayParticipants] = useState<Record<string, any[]>>({});
+  const [categories, setCategories] = useState<any[]>([]);
+  const [smmBalance, setSmmBalance] = useState<string | null>(null);
+  const [checkingBalance, setCheckingBalance] = useState(false);
 
   // Update current time every second for the countdown timers
   useEffect(() => {
@@ -128,11 +162,22 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
       for (const log of expiredReferrals) {
         await remove(ref(rtdb, `referrals/${log.id}`));
       }
+
+      // Cleanup Spinner Logs after 12 hours if not pinned
+      const expiredSpinnerLogs = spinnerLogs.filter(log => {
+        if (log.pinned) return false;
+        const logTime = log.createdAt?.toDate ? log.createdAt.toDate().getTime() : new Date(log.createdAt).getTime();
+        return logTime < twelveHoursAgo.getTime();
+      });
+
+      for (const log of expiredSpinnerLogs) {
+        await deleteDoc(doc(db, 'spinner_logs', log.id));
+      }
     };
 
     const interval = setInterval(cleanupHistory, 60000); // Check every minute
     return () => clearInterval(interval);
-  }, [allOrders, fundRequests, referralLogs]);
+  }, [allOrders, fundRequests, referralLogs, spinnerLogs]);
   
   // App Management State
   const [appConfig, setAppConfig] = useState({
@@ -142,9 +187,23 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     minPayment: 10,
     maxPayment: 10000,
     isMaintenanceMode: false,
-    serviceMarkup: 0
+    serviceMarkup: 0,
+    defaultLanguage: 'en',
+    showLanguageSettings: true,
+    forceGlobalLanguage: false,
+    appNameStyling: {
+      enabled: false,
+      color: '#06b6d4',
+      effect: 'classic',
+      rgbEnabled: false,
+      rgbSpeed: 5,
+      fontStyle: 'Inter',
+      animation: 'none',
+      applyGlobalFont: false
+    }
   });
   const [savingConfig, setSavingConfig] = useState(false);
+  const [showStylingOptions, setShowStylingOptions] = useState(true);
 
   // Service Form State
   const [showServiceModal, setShowServiceModal] = useState(false);
@@ -314,6 +373,45 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
       }
     });
 
+    // Real-time Giveaways
+    const unsubscribeGiveaways = onSnapshot(collection(db, 'giveaways'), (snapshot) => {
+      const giveawaysData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setGiveaways(giveawaysData);
+    });
+
+    // Real-time Categories for Giveaway Form
+    const unsubscribeCategories = onSnapshot(collection(db, 'categories'), (snapshot) => {
+      const categoriesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setCategories(categoriesData);
+    });
+
+    // Real-time Giveaway Participants
+    const unsubscribeParticipants = onSnapshot(collection(db, 'giveaway_participants'), (snapshot) => {
+      const participantsData: Record<string, any[]> = {};
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        const giveawayId = data.giveawayId;
+        if (!participantsData[giveawayId]) {
+          participantsData[giveawayId] = [];
+        }
+        participantsData[giveawayId].push({ id: doc.id, ...data });
+      });
+      setGiveawayParticipants(participantsData);
+    });
+
+    // Real-time Spinner Config
+    const unsubscribeSpinnerConfig = onSnapshot(doc(db, 'settings', 'spinner_config'), (snapshot) => {
+      if (snapshot.exists()) {
+        setSpinnerConfig(snapshot.data());
+      }
+    });
+
+    // Real-time Spinner Logs
+    const unsubscribeSpinnerLogs = onSnapshot(query(collection(db, 'spinner_logs'), orderBy('createdAt', 'desc')), (snapshot) => {
+      const logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setSpinnerLogs(logs);
+    });
+
       return () => {
         unsubscribeUsersList();
         unsubscribeNotifications();
@@ -328,6 +426,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
         unsubscribeLimit();
         unsubscribeReward();
         unsubscribeReferrals();
+        unsubscribeGiveaways();
+        unsubscribeCategories();
+        unsubscribeParticipants();
+        unsubscribeSpinnerConfig();
+        unsubscribeSpinnerLogs();
       };
   }, []);
 
@@ -448,6 +551,37 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
       });
     } catch (error: any) {
       Swal.fire({ icon: 'error', title: 'Error', text: error.message });
+    }
+  };
+
+  const handleSaveSpinnerConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await setDoc(doc(db, 'settings', 'spinner_config'), {
+        ...spinnerConfig,
+        updatedAt: serverTimestamp()
+      });
+      Swal.fire({ icon: 'success', title: 'Config Saved', toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 });
+    } catch (error: any) {
+      Swal.fire({ icon: 'error', title: 'Error', text: error.message });
+    }
+  };
+
+  const handlePinSpinnerLog = async (logId: string, currentPinned: boolean) => {
+    try {
+      await updateDoc(doc(db, 'spinner_logs', logId), {
+        pinned: !currentPinned
+      });
+    } catch (error: any) {
+      console.error('Error pinning log:', error);
+    }
+  };
+
+  const handleDeleteSpinnerLog = async (logId: string) => {
+    try {
+      await deleteDoc(doc(db, 'spinner_logs', logId));
+    } catch (error: any) {
+      console.error('Error deleting log:', error);
     }
   };
 
@@ -733,6 +867,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
       
       await updateDoc(configRef, {
         ...appConfig,
+        forceGlobalLanguage: true,
+        showLanguageSettings: true,
         updatedAt: serverTimestamp()
       });
 
@@ -809,8 +945,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
         const item = items[0];
         const data = {
           category,
+          category_icon: getCategoryIcon(category),
           name: item.name,
-          emoji: item.emoji || '✨',
+          emoji: (!item.emoji || item.emoji === '✨') ? getCategoryIcon(category) : item.emoji,
           description: item.description || '',
           pricePerUnit: parseFloat(item.pricePerUnit),
           minQty: parseInt(item.minQty),
@@ -825,8 +962,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
         // Create multiple services
         const batch = items.map(item => ({
           category,
+          category_icon: getCategoryIcon(category),
           name: item.name,
-          emoji: item.emoji || '✨',
+          emoji: (!item.emoji || item.emoji === '✨') ? getCategoryIcon(category) : item.emoji,
           description: item.description || '',
           pricePerUnit: parseFloat(item.pricePerUnit),
           minQty: parseInt(item.minQty),
@@ -873,6 +1011,22 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
           const apiServices = await response.json();
           
           if (Array.isArray(apiServices)) {
+            // Sync Categories
+            const apiCategories = [...new Set(apiServices.map((s: any) => s.category))];
+            const categoriesRef = collection(db, 'categories');
+            const categoriesSnap = await getDocs(categoriesRef);
+            const existingCategories = new Set(categoriesSnap.docs.map(doc => doc.data().name));
+
+            for (const catName of apiCategories) {
+              if (!existingCategories.has(catName)) {
+                await addDoc(categoriesRef, {
+                  name: catName,
+                  icon: getCategoryIcon(catName),
+                  createdAt: serverTimestamp()
+                });
+              }
+            }
+
             const existingApiIds = new Set(services.map(s => s.api_service_id));
             const newServices = apiServices.filter(s => !existingApiIds.has(s.service.toString()));
             
@@ -896,7 +1050,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                   api_service_id: s.service.toString(),
                   name: s.name,
                   category: s.category,
-                  emoji: '✨',
+                  category_icon: s.category_icon || getCategoryIcon(s.category),
+                  emoji: getCategoryIcon(s.category),
                   description: s.name,
                   basePrice: basePrice,
                   pricePerUnit: Number(finalPrice.toFixed(4)),
@@ -941,6 +1096,103 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     if (result.isConfirmed) {
       await deleteDoc(doc(db, 'services', id));
       Swal.fire({ icon: 'success', title: 'Deleted!', toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 });
+    }
+  };
+
+  const handleCheckBalance = async () => {
+    setCheckingBalance(true);
+    try {
+      const response = await fetch('/api/balance');
+      const data = await response.json();
+      if (data.balance) {
+        setSmmBalance(data.balance + ' ' + (data.currency || 'USD'));
+      } else if (data.error) {
+        Swal.fire({ icon: 'error', title: 'Error', text: data.error });
+      } else {
+        Swal.fire({ icon: 'error', title: 'Error', text: 'Could not fetch balance.' });
+      }
+    } catch (error: any) {
+      Swal.fire({ icon: 'error', title: 'Error', text: error.message });
+    } finally {
+      setCheckingBalance(false);
+    }
+  };
+
+  const handleSaveGiveaway = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const selectedService = services.find(s => s.id === giveawayForm.serviceId);
+      if (!selectedService) throw new Error('Selected service not found');
+
+      const data = {
+        ...giveawayForm,
+        api_service_id: selectedService.api_service_id,
+        categoryIcon: selectedService.category_icon || getCategoryIcon(giveawayForm.category),
+        serviceName: selectedService.name,
+        quantity: parseInt(giveawayForm.quantity),
+        maxUsers: parseInt(giveawayForm.maxUsers),
+        updatedAt: serverTimestamp()
+      };
+
+      if (editingGiveaway) {
+        await updateDoc(doc(db, 'giveaways', editingGiveaway.id), data);
+        Swal.fire({ icon: 'success', title: 'Giveaway Updated', toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 });
+      } else {
+        await addDoc(collection(db, 'giveaways'), {
+          ...data,
+          createdAt: serverTimestamp()
+        });
+        Swal.fire({ icon: 'success', title: 'Giveaway Created', toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 });
+      }
+
+      setShowGiveawayModal(false);
+      setEditingGiveaway(null);
+      setGiveawayForm({
+        category: '',
+        serviceId: '',
+        quantity: '',
+        maxUsers: '',
+        refresh24h: true,
+        enabled: true
+      });
+    } catch (error: any) {
+      Swal.fire({ icon: 'error', title: 'Error', text: error.message });
+    }
+  };
+
+  const handleDeleteGiveaway = async (id: string) => {
+    const result = await Swal.fire({
+      title: 'Delete Giveaway?',
+      text: 'This will also remove all participants for this giveaway.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#ef4444',
+      cancelButtonColor: '#94a3b8'
+    });
+
+    if (result.isConfirmed) {
+      try {
+        await deleteDoc(doc(db, 'giveaways', id));
+        
+        // Delete participants
+        const participantsSnap = await getDocs(query(collection(db, 'giveaway_participants'), where('giveawayId', '==', id)));
+        const batch = writeBatch(db);
+        participantsSnap.docs.forEach(doc => batch.delete(doc.ref));
+        await batch.commit();
+
+        Swal.fire({ icon: 'success', title: 'Deleted!', toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 });
+      } catch (error: any) {
+        Swal.fire({ icon: 'error', title: 'Error', text: error.message });
+      }
+    }
+  };
+
+  const handleToggleGiveawayStatus = async (id: string, currentStatus: boolean) => {
+    try {
+      await updateDoc(doc(db, 'giveaways', id), { enabled: !currentStatus });
+      Swal.fire({ icon: 'success', title: `Giveaway ${!currentStatus ? 'Enabled' : 'Disabled'}`, toast: true, position: 'top-end', showConfirmButton: false, timer: 2000 });
+    } catch (error: any) {
+      Swal.fire({ icon: 'error', title: 'Error', text: error.message });
     }
   };
 
@@ -1013,6 +1265,189 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     setShowServiceModal(true);
   };
 
+  const renderSpinnerManagement = () => (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-black text-slate-800 tracking-tight">Spinner Management</h2>
+        <Disc className="w-8 h-8 text-cyan-500 animate-spin-slow" />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Config Form */}
+        <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-6">
+          <h3 className="font-black text-slate-800 flex items-center gap-2">
+            <Settings className="w-5 h-5 text-slate-400" />
+            Configuration
+          </h3>
+          
+          <form onSubmit={handleSaveSpinnerConfig} className="space-y-6">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Eligibility Period (Days)</label>
+                  <span className="bg-cyan-50 text-cyan-600 px-3 py-1 rounded-full text-[10px] font-black uppercase">
+                    {spinnerConfig.eligibilityDays} Days
+                  </span>
+                </div>
+                <input
+                  type="number"
+                  min="1"
+                  max="30"
+                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700"
+                  value={isNaN(spinnerConfig.eligibilityDays) ? '' : spinnerConfig.eligibilityDays}
+                  onChange={(e) => {
+                    const val = e.target.value === '' ? 0 : parseInt(e.target.value);
+                    setSpinnerConfig({ ...spinnerConfig, eligibilityDays: isNaN(val) ? 0 : val });
+                  }}
+                />
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Max Spins Per Day</label>
+                  <span className="bg-amber-50 text-amber-600 px-3 py-1 rounded-full text-[10px] font-black uppercase">
+                    {spinnerConfig.maxSpinsPerDay || 1} Spins
+                  </span>
+                </div>
+                <input
+                  type="number"
+                  min="1"
+                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 focus:outline-none focus:ring-2 focus:ring-amber-500/20 font-bold text-slate-700"
+                  placeholder="Enter max spins per day"
+                  value={isNaN(spinnerConfig.maxSpinsPerDay) ? '' : spinnerConfig.maxSpinsPerDay}
+                  onChange={(e) => {
+                    const val = e.target.value === '' ? 1 : parseInt(e.target.value);
+                    setSpinnerConfig({ ...spinnerConfig, maxSpinsPerDay: isNaN(val) ? 1 : val });
+                  }}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Paid Spin Cost (Funds)</label>
+                <span className="bg-emerald-50 text-emerald-600 px-3 py-1 rounded-full text-[10px] font-black uppercase">
+                  {formatCurrency(spinnerConfig.paidSpinCost || 0)} Per Spin
+                </span>
+              </div>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 font-bold text-slate-700"
+                placeholder="Enter cost for paid spins"
+                value={isNaN(spinnerConfig.paidSpinCost) ? '' : spinnerConfig.paidSpinCost}
+                onChange={(e) => {
+                  const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                  setSpinnerConfig({ ...spinnerConfig, paidSpinCost: isNaN(val) ? 0 : val });
+                }}
+              />
+            </div>
+
+            <div className="space-y-4">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Spinner Options (10 Total)</label>
+              <div className="grid grid-cols-1 gap-3">
+                {spinnerConfig.options.map((option: any, index: number) => (
+                  <div key={index} className="flex items-center gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                    <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center font-black text-slate-400 text-xs shadow-sm">
+                      {index + 1}
+                    </div>
+                    <div className="flex-1">
+                      <input
+                        type="number"
+                        placeholder="Amount"
+                        className="w-full bg-transparent border-none focus:outline-none font-bold text-slate-700 text-sm"
+                        value={isNaN(option.amount) ? '' : option.amount}
+                        onChange={(e) => {
+                          const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                          const newOptions = [...spinnerConfig.options];
+                          newOptions[index] = { ...option, amount: isNaN(val) ? 0 : val };
+                          setSpinnerConfig({ ...spinnerConfig, options: newOptions });
+                        }}
+                      />
+                    </div>
+                    
+                    {/* Vertical Separator */}
+                    <div className="w-px h-8 bg-slate-200" />
+
+                    <div className="w-24">
+                      <input
+                        type="number"
+                        placeholder="Chance %"
+                        className="w-full bg-transparent border-none focus:outline-none font-bold text-cyan-600 text-sm text-right"
+                        value={isNaN(option.probability) ? '' : option.probability}
+                        onChange={(e) => {
+                          const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                          const newOptions = [...spinnerConfig.options];
+                          newOptions[index] = { ...option, probability: isNaN(val) ? 0 : val };
+                          setSpinnerConfig({ ...spinnerConfig, options: newOptions });
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg shadow-slate-200 flex items-center justify-center gap-2"
+            >
+              <Save className="w-5 h-5" />
+              Save Configuration
+            </button>
+          </form>
+        </div>
+
+        {/* Recent Logs */}
+        <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-6">
+          <h3 className="font-black text-slate-800 flex items-center gap-2">
+            <Clock className="w-5 h-5 text-slate-400" />
+            Recent Spins
+          </h3>
+
+          <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
+            {spinnerLogs.length === 0 ? (
+              <div className="p-12 text-center border-2 border-dashed border-slate-100 rounded-3xl">
+                <p className="text-slate-400 font-bold">No spin history yet</p>
+              </div>
+            ) : (
+              spinnerLogs.map((log) => (
+                <div key={log.id} className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex items-center justify-between group">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm">
+                      <Disc className="w-5 h-5 text-cyan-500" />
+                    </div>
+                    <div>
+                      <p className="font-black text-slate-800 text-sm">{log.userName}</p>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase">
+                        Won {formatCurrency(log.amount)} • {log.createdAt?.toDate ? log.createdAt.toDate().toLocaleTimeString() : new Date(log.createdAt).toLocaleTimeString()}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => handlePinSpinnerLog(log.id, log.pinned)}
+                      className={`p-2 rounded-xl transition-colors ${log.pinned ? 'bg-amber-100 text-amber-600' : 'bg-white text-slate-400 hover:bg-slate-100'}`}
+                    >
+                      {log.pinned ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />}
+                    </button>
+                    <button
+                      onClick={() => handleDeleteSpinnerLog(log.id)}
+                      className="p-2 bg-white text-slate-400 hover:bg-red-50 hover:text-red-500 rounded-xl transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   const statCards = [
     { label: 'Total Users', value: stats.totalUsers, icon: Users, color: 'text-blue-500', bg: 'bg-blue-50' },
     { label: 'Total Orders', value: stats.totalOrders, icon: ClipboardList, color: 'text-purple-500', bg: 'bg-purple-50' },
@@ -1021,7 +1456,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-10 relative overflow-x-hidden">
+    <div 
+      className="min-h-screen bg-slate-50 pb-10 relative overflow-x-hidden"
+      style={appConfig.appNameStyling.enabled && appConfig.appNameStyling.applyGlobalFont ? { fontFamily: appConfig.appNameStyling.fontStyle } : {}}
+    >
       {/* Sidebar Overlay */}
       <AnimatePresence>
         {isSidebarOpen && (
@@ -1136,6 +1574,26 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                 <Gift className="w-5 h-5" />
                 Referral Management
               </button>
+
+              <button
+                onClick={() => { setView('daily_giveaway'); setIsSidebarOpen(false); }}
+                className={`w-full flex items-center gap-4 p-4 rounded-2xl font-bold transition-all ${
+                  view === 'daily_giveaway' ? 'bg-cyan-50 text-cyan-600' : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                <Gift className="w-5 h-5" />
+                Daily Giveaway
+              </button>
+
+              <button
+                onClick={() => { setView('spinner_management'); setIsSidebarOpen(false); }}
+                className={`w-full flex items-center gap-4 p-4 rounded-2xl font-bold transition-all ${
+                  view === 'spinner_management' ? 'bg-cyan-50 text-cyan-600' : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                <Disc className="w-5 h-5" />
+                Spinner Management
+              </button>
             </nav>
 
             <div className="pt-6 border-t border-slate-100">
@@ -1163,6 +1621,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                view === 'payments' ? 'Payment Management' :
                view === 'notifications' ? 'Notifications' :
                view === 'referral_management' ? 'Referral Management' :
+               view === 'daily_giveaway' ? 'Daily Giveaway' :
+               view === 'spinner_management' ? 'Spinner Management' :
                'User Management'}
             </h1>
             <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Admin Panel</p>
@@ -1305,7 +1765,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                         <div className="w-8 h-8 rounded-xl bg-cyan-500 flex items-center justify-center">
                           <Layers className="w-4 h-4 text-white" />
                         </div>
-                        <h3 className="font-black text-slate-800 uppercase tracking-widest text-sm">{category}</h3>
+                        <h3 className="font-black text-slate-800 uppercase tracking-widest text-sm">
+                          {getCategoryIcon(category)} {category}
+                        </h3>
                       </div>
                       <span className="text-[10px] font-black text-slate-400 bg-white px-2 py-1 rounded-full border border-slate-100">
                         {(categoryServices as any[]).length} Services
@@ -1354,19 +1816,251 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
 
         {view === 'app_management' && (
           <div className="space-y-6">
-            <h2 className="text-2xl font-black text-slate-800 tracking-tight">App Management</h2>
+            <h2 className="text-2xl font-black text-slate-800 tracking-tight">{t('app_management')}</h2>
             
             <form onSubmit={handleSaveConfig} className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-6">
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">App Name</label>
-                <input
-                  required
-                  placeholder="e.g. InstaBoost"
-                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700"
-                  value={appConfig.appName}
-                  onChange={(e) => setAppConfig({ ...appConfig, appName: e.target.value })}
-                />
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex-1 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t('app_name')}</label>
+                    {appConfig.appNameStyling?.enabled && (
+                      <button
+                        type="button"
+                        onClick={() => setShowStylingOptions(!showStylingOptions)}
+                        className="text-[10px] font-black text-cyan-500 uppercase tracking-widest hover:text-cyan-600 transition-colors flex items-center gap-1"
+                      >
+                        {showStylingOptions ? 'Hide Styling' : 'Show Styling'}
+                        <ChevronDown className={`w-3 h-3 transition-transform ${showStylingOptions ? 'rotate-180' : ''}`} />
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    required
+                    placeholder="e.g. InstaBoost"
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700"
+                    value={appConfig.appName}
+                    onChange={(e) => setAppConfig({ ...appConfig, appName: e.target.value })}
+                  />
+                </div>
+                <div className="pt-6">
+                  <button
+                    type="button"
+                    onClick={() => setAppConfig({ 
+                      ...appConfig, 
+                      appNameStyling: { 
+                        ...(appConfig.appNameStyling || {
+                          enabled: false,
+                          color: '#06b6d4',
+                          effect: 'classic',
+                          rgbEnabled: false,
+                          rgbSpeed: 5,
+                          fontStyle: 'Inter',
+                          animation: 'none'
+                        }), 
+                        enabled: !appConfig.appNameStyling?.enabled 
+                      } 
+                    })}
+                    className={`w-14 h-8 rounded-full relative transition-colors ${appConfig.appNameStyling?.enabled ? 'bg-cyan-500' : 'bg-slate-200'}`}
+                  >
+                    <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all ${appConfig.appNameStyling?.enabled ? 'left-7' : 'left-1'}`} />
+                  </button>
+                </div>
               </div>
+
+              {appConfig.appNameStyling?.enabled && showStylingOptions && (
+                <motion.div 
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="p-6 bg-slate-50 rounded-[2rem] border border-slate-100 space-y-6 overflow-hidden"
+                >
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* Color & Effects */}
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Text Color & Effects</label>
+                      <div className="space-y-4">
+                        <div className="flex flex-wrap gap-2">
+                          {['#06b6d4', '#f43f5e', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#000000', '#ffffff'].map(c => (
+                            <button
+                              key={c}
+                              type="button"
+                              onClick={() => setAppConfig({ 
+                                ...appConfig, 
+                                appNameStyling: { ...appConfig.appNameStyling, color: c, rgbEnabled: false } 
+                              })}
+                              className={`w-8 h-8 rounded-full border-2 transition-all ${appConfig.appNameStyling.color === c && !appConfig.appNameStyling.rgbEnabled ? 'border-cyan-500 scale-110' : 'border-transparent'}`}
+                              style={{ backgroundColor: c }}
+                            />
+                          ))}
+                        </div>
+                        
+                        <div className="flex items-center justify-between p-3 bg-white rounded-2xl border border-slate-100">
+                          <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">RGB Animation</span>
+                          <button
+                            type="button"
+                            onClick={() => setAppConfig({ 
+                              ...appConfig, 
+                              appNameStyling: { ...appConfig.appNameStyling, rgbEnabled: !appConfig.appNameStyling.rgbEnabled } 
+                            })}
+                            className={`w-10 h-6 rounded-full relative transition-colors ${appConfig.appNameStyling.rgbEnabled ? 'bg-cyan-500' : 'bg-slate-200'}`}
+                          >
+                            <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${appConfig.appNameStyling.rgbEnabled ? 'left-5' : 'left-1'}`} />
+                          </button>
+                        </div>
+
+                        {appConfig.appNameStyling.rgbEnabled && (
+                          <div className="space-y-1.5">
+                            <div className="flex justify-between">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">RGB Speed</label>
+                              <span className="text-[10px] font-black text-cyan-500">{appConfig.appNameStyling.rgbSpeed}s</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="1"
+                              max="20"
+                              step="1"
+                              className="w-full accent-cyan-500"
+                              value={appConfig.appNameStyling.rgbSpeed}
+                              onChange={(e) => setAppConfig({ 
+                                ...appConfig, 
+                                appNameStyling: { ...appConfig.appNameStyling, rgbSpeed: parseInt(e.target.value) } 
+                              })}
+                            />
+                          </div>
+                        )}
+
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Effects</label>
+                          <select
+                            className="w-full bg-white border border-slate-100 rounded-xl py-2 px-3 text-xs font-bold text-slate-600 focus:outline-none"
+                            value={appConfig.appNameStyling.effect}
+                            onChange={(e) => setAppConfig({ 
+                              ...appConfig, 
+                              appNameStyling: { ...appConfig.appNameStyling, effect: e.target.value } 
+                            })}
+                          >
+                            <option value="classic">Classic</option>
+                            <option value="barkst">Barkst (Neon)</option>
+                            <option value="gradient">Gradient</option>
+                            <option value="outline">Outline</option>
+                            <option value="shadow">Glow Shadow</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Text Styles (Fonts) */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 text-cyan-500">{t('language')}</label>
+                      </div>
+                      
+                      <div className="space-y-4 bg-slate-50 p-8 rounded-3xl border border-slate-100 min-h-[150px]">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t('default_language')}</label>
+                          <select
+                            className="w-full bg-white border border-slate-100 rounded-2xl py-4 px-6 text-sm font-bold text-slate-600 shadow-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+                            value={appConfig.defaultLanguage || 'en'}
+                            onChange={(e) => setAppConfig({ ...appConfig, defaultLanguage: e.target.value })}
+                          >
+                            {languages.map(lang => (
+                              <option key={lang.code} value={lang.code}>{lang.name} ({lang.nativeName})</option>
+                            ))}
+                          </select>
+                          <p className="text-[9px] text-slate-400 font-medium ml-1 italic">This will be the default language for all users.</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Text Styles (100+)</label>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Global</span>
+                          <button
+                            type="button"
+                            onClick={() => setAppConfig({ 
+                              ...appConfig, 
+                              appNameStyling: { ...appConfig.appNameStyling, applyGlobalFont: !appConfig.appNameStyling.applyGlobalFont } 
+                            })}
+                            className={`w-8 h-4 rounded-full relative transition-colors ${appConfig.appNameStyling.applyGlobalFont ? 'bg-cyan-500' : 'bg-slate-200'}`}
+                          >
+                            <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${appConfig.appNameStyling.applyGlobalFont ? 'left-4.5' : 'left-0.5'}`} />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="h-[200px] overflow-y-auto pr-2 custom-scrollbar space-y-2">
+                        {FONTS.map(font => (
+                          <button
+                            key={font}
+                            type="button"
+                            onClick={() => setAppConfig({ 
+                              ...appConfig, 
+                              appNameStyling: { ...appConfig.appNameStyling, fontStyle: font } 
+                            })}
+                            className={`w-full p-3 rounded-xl border text-left transition-all ${appConfig.appNameStyling.fontStyle === font ? 'bg-cyan-50 border-cyan-200 text-cyan-600' : 'bg-white border-slate-100 text-slate-600 hover:bg-slate-50'}`}
+                            style={{ fontFamily: font }}
+                          >
+                            <span className="text-sm font-bold">{font}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Animations */}
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Text Animations (50+)</label>
+                      <div className="h-[200px] overflow-y-auto pr-2 custom-scrollbar space-y-2">
+                        {[
+                          'none', 'bounce', 'pulse', 'shake', 'swing', 'tada', 'wobble', 'jello', 'heartBeat', 'flash',
+                          'rubberBand', 'headShake', 'flip', 'flipInX', 'flipInY', 'fadeIn', 'fadeInDown', 'fadeInLeft', 'fadeInRight',
+                          'fadeInUp', 'bounceIn', 'bounceInDown', 'bounceInLeft', 'bounceInRight', 'bounceInUp', 'rotateIn', 'rotateInDownLeft', 'rotateInDownRight', 'rotateInUpLeft',
+                          'rotateInUpRight', 'slideInDown', 'slideInLeft', 'slideInRight', 'slideInUp', 'zoomIn', 'zoomInDown', 'zoomInLeft', 'zoomInRight', 'zoomInUp',
+                          'jackInTheBox', 'rollIn', 'float', 'glitch', 'wave', 'typing', 'sparkle', 'shimmer', 'rainbow', 'neonPulse'
+                        ].map(anim => (
+                          <button
+                            key={anim}
+                            type="button"
+                            onClick={() => setAppConfig({ 
+                              ...appConfig, 
+                              appNameStyling: { ...appConfig.appNameStyling, animation: anim } 
+                            })}
+                            className={`w-full p-3 rounded-xl border text-left transition-all ${appConfig.appNameStyling.animation === anim ? 'bg-cyan-50 border-cyan-200 text-cyan-600' : 'bg-white border-slate-100 text-slate-600 hover:bg-slate-50'}`}
+                          >
+                            <span className="text-xs font-black uppercase tracking-widest">{anim}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Preview */}
+                  <div className="pt-4 border-t border-slate-100">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 block mb-3">Live Preview</label>
+                    <div className="bg-slate-900 p-8 rounded-3xl flex items-center justify-center overflow-hidden">
+                      <h1 
+                        className={`text-4xl font-black tracking-tighter transition-all duration-500`}
+                        style={{ 
+                          color: appConfig.appNameStyling.rgbEnabled ? undefined : (appConfig.appNameStyling.animation === 'shimmer' ? 'transparent' : appConfig.appNameStyling.color),
+                          fontFamily: appConfig.appNameStyling.fontStyle,
+                          animation: `${appConfig.appNameStyling.animation} ${appConfig.appNameStyling.animation === 'typing' ? '3s steps(40, end)' : '2s'} infinite, ${appConfig.appNameStyling.rgbEnabled ? `rgb-cycle ${appConfig.appNameStyling.rgbSpeed}s linear infinite` : 'none'}`,
+                          textShadow: appConfig.appNameStyling.effect === 'barkst' ? `0 0 10px ${appConfig.appNameStyling.color}, 0 0 20px ${appConfig.appNameStyling.color}` : 
+                                     appConfig.appNameStyling.effect === 'shadow' ? `4px 4px 0px rgba(0,0,0,0.2)` : 'none',
+                          WebkitTextStroke: appConfig.appNameStyling.effect === 'outline' ? `1px ${appConfig.appNameStyling.color}` : 'none',
+                          backgroundImage: appConfig.appNameStyling.animation === 'shimmer' ? `linear-gradient(to right, ${appConfig.appNameStyling.color} 0, #ffffff 50%, ${appConfig.appNameStyling.color} 100%)` : 
+                                     appConfig.appNameStyling.effect === 'gradient' ? `linear-gradient(to right, ${appConfig.appNameStyling.color}, #ffffff)` : 'none',
+                          backgroundSize: appConfig.appNameStyling.animation === 'shimmer' ? '200% auto' : 'auto',
+                          WebkitBackgroundClip: (appConfig.appNameStyling.effect === 'gradient' || appConfig.appNameStyling.animation === 'shimmer') ? 'text' : 'none',
+                          WebkitTextFillColor: (appConfig.appNameStyling.effect === 'gradient' || appConfig.appNameStyling.animation === 'shimmer') ? 'transparent' : 'inherit',
+                          overflow: appConfig.appNameStyling.animation === 'typing' ? 'hidden' : 'visible',
+                          whiteSpace: appConfig.appNameStyling.animation === 'typing' ? 'nowrap' : 'normal',
+                          borderRight: appConfig.appNameStyling.animation === 'typing' ? `2px solid ${appConfig.appNameStyling.color}` : 'none'
+                        }}
+                      >
+                        {appConfig.appName}
+                      </h1>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
 
               <div className="space-y-1.5">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Service Markup (%)</label>
@@ -1375,8 +2069,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                   required
                   placeholder="e.g. 20"
                   className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700"
-                  value={appConfig.serviceMarkup}
-                  onChange={(e) => setAppConfig({ ...appConfig, serviceMarkup: parseInt(e.target.value) || 0 })}
+                  value={isNaN(appConfig.serviceMarkup) ? '' : appConfig.serviceMarkup}
+                  onChange={(e) => {
+                    const val = e.target.value === '' ? 0 : parseInt(e.target.value);
+                    setAppConfig({ ...appConfig, serviceMarkup: isNaN(val) ? 0 : val });
+                  }}
                 />
                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest ml-1">This percentage will be added to the base SMM API price.</p>
               </div>
@@ -1427,25 +2124,38 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                     required
                     placeholder="e.g. 10"
                     className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700"
-                    value={appConfig.minPayment}
-                    onChange={(e) => setAppConfig({ ...appConfig, minPayment: parseInt(e.target.value) || 0 })}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Max Payment (₹)</label>
-                  <input
-                    type="number"
-                    required
-                    placeholder="e.g. 10000"
-                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700"
-                    value={appConfig.maxPayment}
-                    onChange={(e) => setAppConfig({ ...appConfig, maxPayment: parseInt(e.target.value) || 0 })}
-                  />
+                  value={isNaN(appConfig.minPayment) ? '' : appConfig.minPayment}
+                  onChange={(e) => {
+                    const val = e.target.value === '' ? 0 : parseInt(e.target.value);
+                    setAppConfig({ ...appConfig, minPayment: isNaN(val) ? 0 : val });
+                  }}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Max Payment (₹)</label>
+                <input
+                  type="number"
+                  required
+                  placeholder="e.g. 10000"
+                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700"
+                  value={isNaN(appConfig.maxPayment) ? '' : appConfig.maxPayment}
+                  onChange={(e) => {
+                    const val = e.target.value === '' ? 0 : parseInt(e.target.value);
+                    setAppConfig({ ...appConfig, maxPayment: isNaN(val) ? 0 : val });
+                  }}
+                />
                 </div>
               </div>
 
               <div className="space-y-4 pt-4 border-t border-slate-100">
-                <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">SMM API Settings</h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">SMM API Settings</h3>
+                  {smmBalance && (
+                    <div className="bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">
+                      <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Balance: {smmBalance}</p>
+                    </div>
+                  )}
+                </div>
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">SMM API URL</label>
                   <input
@@ -1457,13 +2167,24 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">SMM API Key</label>
-                  <input
-                    type="password"
-                    placeholder="Enter your SMM API Key"
-                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700"
-                    value={appConfig.smmApiKey || ''}
-                    onChange={(e) => setAppConfig({ ...appConfig, smmApiKey: e.target.value })}
-                  />
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="password"
+                      placeholder="Enter your SMM API Key"
+                      className="flex-1 bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700 min-w-0"
+                      value={appConfig.smmApiKey || ''}
+                      onChange={(e) => setAppConfig({ ...appConfig, smmApiKey: e.target.value })}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleCheckBalance}
+                      disabled={checkingBalance || !appConfig.smmApiKey}
+                      className="px-6 py-4 sm:py-0 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl font-bold text-xs transition-all disabled:opacity-50 flex items-center justify-center gap-2 whitespace-nowrap"
+                    >
+                      {checkingBalance ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}
+                      Check Balance
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -1482,18 +2203,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
         {view === 'orders' && (
           <div className="space-y-6">
             <div className="flex flex-col gap-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <h2 className="text-2xl font-black text-slate-800 tracking-tight">Order Management</h2>
-                <div className="flex bg-slate-100 p-1 rounded-2xl">
+                <div className="flex bg-slate-100 p-1 rounded-2xl self-start sm:self-auto">
                   <button 
                     onClick={() => { setOrderFilter('active'); setOrderSearchQuery(''); }}
-                    className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${orderFilter === 'active' ? 'bg-white text-cyan-500 shadow-sm' : 'text-slate-400'}`}
+                    className={`px-4 sm:px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${orderFilter === 'active' ? 'bg-white text-cyan-500 shadow-sm' : 'text-slate-400'}`}
                   >
                     Active
                   </button>
                   <button 
                     onClick={() => { setOrderFilter('history'); setOrderSearchQuery(''); }}
-                    className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${orderFilter === 'history' ? 'bg-white text-cyan-500 shadow-sm' : 'text-slate-400'}`}
+                    className={`px-4 sm:px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${orderFilter === 'history' ? 'bg-white text-cyan-500 shadow-sm' : 'text-slate-400'}`}
                   >
                     History
                   </button>
@@ -1647,18 +2368,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
 
         {view === 'payments' && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <h2 className="text-2xl font-black text-slate-800 tracking-tight">Payment Management</h2>
-              <div className="flex bg-slate-100 p-1 rounded-2xl">
+              <div className="flex bg-slate-100 p-1 rounded-2xl self-start sm:self-auto">
                 <button 
                   onClick={() => setPaymentFilter('active')}
-                  className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${paymentFilter === 'active' ? 'bg-white text-cyan-500 shadow-sm' : 'text-slate-400'}`}
+                  className={`px-4 sm:px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${paymentFilter === 'active' ? 'bg-white text-cyan-500 shadow-sm' : 'text-slate-400'}`}
                 >
                   Active
                 </button>
                 <button 
                   onClick={() => setPaymentFilter('history')}
-                  className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${paymentFilter === 'history' ? 'bg-white text-cyan-500 shadow-sm' : 'text-slate-400'}`}
+                  className={`px-4 sm:px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${paymentFilter === 'history' ? 'bg-white text-cyan-500 shadow-sm' : 'text-slate-400'}`}
                 >
                   History
                 </button>
@@ -1955,8 +2676,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                     <div key={u.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
                       <div className="flex items-start justify-between">
                         <div className="flex items-center gap-4 min-w-0 flex-1">
-                          <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center border border-slate-100">
-                            <Users className="w-6 h-6 text-slate-400" />
+                          <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center border border-slate-100 overflow-hidden">
+                            {u.photoURL ? (
+                              <img src={u.photoURL} alt={u.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            ) : (
+                              <Users className="w-6 h-6 text-slate-400" />
+                            )}
                           </div>
                           <div className="min-w-0 flex-1">
                             <h3 className="font-black text-slate-800 text-lg truncate">{u.name || 'User'}</h3>
@@ -2322,6 +3047,130 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
             </div>
           </div>
         )}
+
+        {view === 'daily_giveaway' && (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <h2 className="text-2xl font-black text-slate-800 tracking-tight">Daily Giveaway</h2>
+              <button
+                onClick={() => {
+                  setEditingGiveaway(null);
+                  setGiveawayForm({
+                    category: '',
+                    serviceId: '',
+                    quantity: '',
+                    maxUsers: '',
+                    refresh24h: true,
+                    enabled: true
+                  });
+                  setShowGiveawayModal(true);
+                }}
+                className="flex items-center justify-center gap-2 px-6 py-3 bg-cyan-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg shadow-cyan-200"
+              >
+                <Plus className="w-4 h-4" />
+                Create Giveaway
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4">
+              {giveaways.length === 0 ? (
+                <div className="bg-white p-12 rounded-[2.5rem] border border-dashed border-slate-200 text-center">
+                  <Gift className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+                  <p className="text-slate-400 font-bold">No giveaways created yet.</p>
+                </div>
+              ) : (
+                giveaways.map((giveaway) => (
+                  <div key={giveaway.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center text-2xl">
+                          {giveaway.categoryIcon}
+                        </div>
+                        <div>
+                          <h3 className="font-black text-slate-800">{giveaway.serviceName}</h3>
+                          <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">{giveaway.category}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setEditingGiveaway(giveaway);
+                            setGiveawayForm({
+                              category: giveaway.category,
+                              serviceId: giveaway.serviceId,
+                              quantity: giveaway.quantity.toString(),
+                              maxUsers: giveaway.maxUsers.toString(),
+                              refresh24h: giveaway.refresh24h,
+                              enabled: giveaway.enabled
+                            });
+                            setShowGiveawayModal(true);
+                          }}
+                          className="p-2 bg-slate-50 text-slate-400 hover:text-cyan-500 rounded-xl transition-all"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleToggleGiveawayStatus(giveaway.id, giveaway.enabled)}
+                          className={`p-2 rounded-xl transition-all ${giveaway.enabled ? 'bg-emerald-50 text-emerald-500' : 'bg-rose-50 text-rose-500'}`}
+                        >
+                          {giveaway.enabled ? <ShieldCheck className="w-4 h-4" /> : <ShieldAlert className="w-4 h-4" />}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteGiveaway(giveaway.id)}
+                          className="p-2 bg-rose-50 text-rose-500 rounded-xl hover:bg-rose-100 transition-all"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="bg-slate-50 p-3 rounded-xl">
+                        <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-1">Quantity</p>
+                        <p className="font-bold text-slate-700">{giveaway.quantity}</p>
+                      </div>
+                      <div className="bg-slate-50 p-3 rounded-xl">
+                        <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-1">Max Users</p>
+                        <p className="font-bold text-slate-700">{giveaway.maxUsers}</p>
+                      </div>
+                      <div className="bg-slate-50 p-3 rounded-xl">
+                        <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-1">Participants</p>
+                        <p className="font-bold text-slate-700">{(giveawayParticipants[giveaway.id] || []).length}</p>
+                      </div>
+                      <div className="bg-slate-50 p-3 rounded-xl">
+                        <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-1">24h Refresh</p>
+                        <p className={`font-bold ${giveaway.refresh24h ? 'text-emerald-500' : 'text-slate-400'}`}>
+                          {giveaway.refresh24h ? 'Enabled' : 'Disabled'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {(giveawayParticipants[giveaway.id] || []).length > 0 && (
+                      <div className="pt-4 border-t border-slate-50">
+                        <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-3">Recent Participants</p>
+                        <div className="flex flex-wrap gap-2">
+                          {(giveawayParticipants[giveaway.id] || []).slice(0, 10).map((p, idx) => (
+                            <div key={idx} className="bg-slate-50 px-3 py-1 rounded-full flex items-center gap-2 border border-slate-100">
+                              <User className="w-3 h-3 text-cyan-500" />
+                              <span className="text-xs font-bold text-slate-600">{p.userName}</span>
+                            </div>
+                          ))}
+                          {(giveawayParticipants[giveaway.id] || []).length > 10 && (
+                            <div className="bg-slate-50 px-3 py-1 rounded-full text-xs font-bold text-slate-400 border border-slate-100">
+                              +{(giveawayParticipants[giveaway.id] || []).length - 10} more
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {view === 'spinner_management' && renderSpinnerManagement()}
       </div>
 
       {/* Category Modal */}
@@ -2381,7 +3230,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                       {serviceForm.items.length > 1 && !editingService && (
                         <button 
                           type="button"
-                          onClick={() => removeServiceItem(index)}
+                          onClick={removeServiceItem(index)}
                           className="absolute -top-2 -right-2 w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center shadow-lg"
                         >
                           <X className="w-3 h-3" />
@@ -2476,6 +3325,116 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                 >
                   <Save className="w-5 h-5" />
                   {editingService ? 'Update Service' : `Create ${serviceForm.items.length} Service${serviceForm.items.length > 1 ? 's' : ''}`}
+                </button>
+              </form>
+            </motion.div>
+          </div>
+        )}
+
+        {showGiveawayModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center px-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowGiveawayModal(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-md bg-white rounded-[2.5rem] p-8 shadow-2xl space-y-6"
+            >
+              <div className="flex items-center justify-between">
+                <h3 className="text-2xl font-black text-slate-800 tracking-tight">
+                  {editingGiveaway ? 'Edit Giveaway' : 'New Giveaway'}
+                </h3>
+                <button onClick={() => setShowGiveawayModal(false)} className="p-2 hover:bg-slate-100 rounded-full">
+                  <X className="w-6 h-6 text-slate-400" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveGiveaway} className="space-y-6 max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Select Category</label>
+                  <select
+                    required
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700"
+                    value={giveawayForm.category}
+                    onChange={(e) => setGiveawayForm({ ...giveawayForm, category: e.target.value, serviceId: '' })}
+                  >
+                    <option value="">Choose a category...</option>
+                    {categories.map(cat => (
+                      <option key={cat.id} value={cat.name}>{cat.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Select Service</label>
+                  <select
+                    required
+                    disabled={!giveawayForm.category}
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700 disabled:opacity-50"
+                    value={giveawayForm.serviceId}
+                    onChange={(e) => setGiveawayForm({ ...giveawayForm, serviceId: e.target.value })}
+                  >
+                    <option value="">Choose a service...</option>
+                    {services
+                      .filter(s => s.category === giveawayForm.category)
+                      .map(service => (
+                        <option key={service.id} value={service.id}>{service.name}</option>
+                      ))
+                    }
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Quantity</label>
+                    <input
+                      required
+                      type="number"
+                      placeholder="e.g. 100"
+                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700"
+                      value={giveawayForm.quantity}
+                      onChange={(e) => setGiveawayForm({ ...giveawayForm, quantity: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Max Users</label>
+                    <input
+                      required
+                      type="number"
+                      placeholder="e.g. 50"
+                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700"
+                      value={giveawayForm.maxUsers}
+                      onChange={(e) => setGiveawayForm({ ...giveawayForm, maxUsers: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div>
+                    <p className="text-sm font-bold text-slate-700">24h Refresh</p>
+                    <p className="text-[10px] text-slate-400 font-medium">Reset participants every 24 hours</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setGiveawayForm({ ...giveawayForm, refresh24h: !giveawayForm.refresh24h })}
+                    className={`w-12 h-6 rounded-full transition-all relative ${giveawayForm.refresh24h ? 'bg-cyan-500' : 'bg-slate-300'}`}
+                  >
+                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${giveawayForm.refresh24h ? 'right-1' : 'left-1'}`} />
+                  </button>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full bg-cyan-500 text-white py-4 rounded-2xl font-black text-lg shadow-xl shadow-cyan-200 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                >
+                  <Save className="w-5 h-5" />
+                  {editingGiveaway ? 'Update Giveaway' : 'Create Giveaway'}
                 </button>
               </form>
             </motion.div>

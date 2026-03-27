@@ -4,8 +4,33 @@ export interface UserData {
   email: string;
   phone: string;
   walletBalance: number;
+  totalSpent?: number;
   selectedTheme: string;
+  photoURL?: string;
+  lastSpinAt?: any;
+  spinsToday?: number;
   createdAt: any;
+}
+
+export interface SpinnerOption {
+  amount: number;
+  probability: number;
+}
+
+export interface SpinnerConfig {
+  options: SpinnerOption[];
+  eligibilityDays: number;
+  maxSpinsPerDay?: number;
+  updatedAt: any;
+}
+
+export interface SpinnerLog {
+  id: string;
+  userId: string;
+  userName: string;
+  amount: number;
+  createdAt: any;
+  pinned: boolean;
 }
 
 export interface Service {
@@ -13,6 +38,7 @@ export interface Service {
   api_service_id?: string; // ID from SMM API
   name: string;
   category: string;
+  category_icon?: string; // Optional icon for the category
   emoji: string;
   description: string;
   pricePerUnit: number;
@@ -36,6 +62,7 @@ export interface Order {
   totalCost: number;
   price?: number; // For backward compatibility
   status: 'Pending' | 'Processing' | 'Completed' | 'Cancelled' | 'Approved' | 'Rejected';
+  isGiveaway?: boolean;
   createdAt: any;
 }
 

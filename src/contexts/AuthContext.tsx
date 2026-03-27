@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, updateDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, onValue, set } from 'firebase/database';
 import { auth, db, rtdb } from '../firebase';
 import { UserData } from '../types';
@@ -29,7 +29,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const userDocRef = doc(db, 'users', currentUser.uid);
         const unsubUserData = onSnapshot(userDocRef, (docSnap) => {
           if (docSnap.exists()) {
-            setUserData({ uid: docSnap.id, ...docSnap.data() } as UserData);
+            const data = docSnap.data();
+            // Initialize totalSpent if missing
+            if (data.totalSpent === undefined) {
+              updateDoc(userDocRef, { totalSpent: 0 }).catch(err => console.error("Error initializing totalSpent:", err));
+            }
+            // Sync to leaderboard for public access
+            const leaderboardRef = doc(db, 'leaderboard', currentUser.uid);
+            setDoc(leaderboardRef, {
+              name: data.name || 'User',
+              photoURL: data.photoURL || null,
+              totalSpent: Number(data.totalSpent || 0),
+              updatedAt: serverTimestamp()
+            }, { merge: true }).catch(err => console.error("Error syncing to leaderboard:", err));
+
+            setUserData({ uid: docSnap.id, ...data } as UserData);
           }
         });
 

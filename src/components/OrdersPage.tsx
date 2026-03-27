@@ -7,9 +7,11 @@ import { formatCurrency, formatDate } from '../utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { ClipboardList, Clock, CheckCircle2, XCircle, Loader2, RefreshCcw } from 'lucide-react';
 import { doc, updateDoc } from 'firebase/firestore';
+import { useTranslation } from '../contexts/LanguageContext';
 
 const OrdersPage = () => {
   const { user } = useAuth();
+  const { t } = useTranslation();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -100,6 +102,16 @@ const OrdersPage = () => {
     }
   };
 
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case 'Pending': return t('pending');
+      case 'Processing': return t('processing');
+      case 'Completed': return t('completed');
+      case 'Cancelled': return t('cancelled');
+      default: return status;
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh]">
@@ -112,8 +124,8 @@ const OrdersPage = () => {
     <div className="space-y-6">
       <header className="mb-8 flex items-center justify-between">
         <div>
-          <h2 className="text-sm font-medium opacity-60 uppercase tracking-widest mb-1" style={{ color: 'var(--text-primary)' }}>Track Your</h2>
-          <h1 className="text-3xl font-bold" style={{ color: 'var(--text-primary)' }}>Premium Orders</h1>
+          <h2 className="text-sm font-medium opacity-60 uppercase tracking-widest mb-1" style={{ color: 'var(--text-primary)' }}>{t('track_your')}</h2>
+          <h1 className="text-3xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('premium_orders')}</h1>
         </div>
         <button 
           onClick={refreshStatuses}
@@ -127,7 +139,7 @@ const OrdersPage = () => {
       {orders.length === 0 ? (
         <div className="glass rounded-3xl p-12 text-center">
           <ClipboardList className="w-12 h-12 mx-auto mb-4 opacity-20" style={{ color: 'var(--text-primary)' }} />
-          <p className="opacity-60" style={{ color: 'var(--text-primary)' }}>No orders placed yet.</p>
+          <p className="opacity-60" style={{ color: 'var(--text-primary)' }}>{t('no_orders_placed')}</p>
         </div>
       ) : (
         <div className="grid gap-4">
@@ -144,31 +156,38 @@ const OrdersPage = () => {
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       <span className="bg-white/10 opacity-60 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest" style={{ color: 'var(--text-primary)' }}>
-                        {order.category || 'Service'}
+                        {order.category || t('service')}
                       </span>
+                      {order.isGiveaway && (
+                        <span className="bg-cyan-500/20 text-cyan-400 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest border border-cyan-500/30">
+                          {t('giveaway')}
+                        </span>
+                      )}
                     </div>
                     <h3 className="font-bold text-lg mb-1" style={{ color: 'var(--text-primary)' }}>{order.serviceName}</h3>
                     <p className="text-xs opacity-40" style={{ color: 'var(--text-primary)' }}>{formatDate(order.createdAt)}</p>
                   </div>
                   <div className={`flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-bold ${getStatusClass(order.status)}`}>
                     {getStatusIcon(order.status)}
-                    {order.status}
+                    {getStatusText(order.status)}
                   </div>
                 </div>
 
                 <div className="space-y-3 py-4 border-y border-white/5">
                   <div className="flex justify-between items-center">
-                    <span className="text-[10px] opacity-40 uppercase tracking-widest font-bold" style={{ color: 'var(--text-primary)' }}>Target Link</span>
-                    <span className="text-xs opacity-80 font-medium truncate max-w-[200px]" style={{ color: 'var(--text-primary)' }}>{order.link}</span>
+                    <span className="text-[10px] opacity-40 uppercase tracking-widest font-bold" style={{ color: 'var(--text-primary)' }}>{t('target_link')}</span>
+                    <span className="text-xs opacity-80 font-medium truncate max-w-[200px]" style={{ color: 'var(--text-primary)' }}>
+                      {order.link || order.profileLink || order.videoLink || 'N/A'}
+                    </span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-[10px] opacity-40 uppercase tracking-widest font-bold" style={{ color: 'var(--text-primary)' }}>Quantity</span>
+                    <span className="text-[10px] opacity-40 uppercase tracking-widest font-bold" style={{ color: 'var(--text-primary)' }}>{t('quantity')}</span>
                     <span className="text-sm opacity-90 font-black" style={{ color: 'var(--text-primary)' }}>{order.quantity}</span>
                   </div>
                 </div>
 
                 <div className="flex justify-between items-center pt-4">
-                  <span className="text-xs opacity-40 uppercase tracking-widest font-bold" style={{ color: 'var(--text-primary)' }}>Total Cost</span>
+                  <span className="text-xs opacity-40 uppercase tracking-widest font-bold" style={{ color: 'var(--text-primary)' }}>{t('total_cost')}</span>
                   <span className="font-black text-xl text-cyan-400">{formatCurrency(order.totalCost || order.price || 0)}</span>
                 </div>
               </motion.div>

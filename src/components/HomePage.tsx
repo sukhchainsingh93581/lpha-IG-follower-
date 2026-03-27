@@ -4,12 +4,15 @@ import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Service } from '../types';
 import { formatCurrency } from '../utils';
+import { getCategoryIcon } from '../utils/categoryIcons';
 import { motion, AnimatePresence } from 'motion/react';
-import { Loader2, Send, Info, Link as LinkIcon, Hash, Search, ChevronDown, User, Clock } from 'lucide-react';
+import { Loader2, Send, Info, Link as LinkIcon, Hash, Search, ChevronDown, User, Clock, X, ExternalLink } from 'lucide-react';
+import { useTranslation } from '../contexts/LanguageContext';
 import Swal from 'sweetalert2';
 
 const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
   const { user, userData } = useAuth();
+  const { t } = useTranslation();
   const [services, setServices] = useState<Service[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -24,6 +27,30 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
   const serviceSelectRef = React.useRef<HTMLDivElement>(null);
   const serviceDetailsRef = React.useRef<HTMLDivElement>(null);
   const linkInputRef = React.useRef<HTMLDivElement>(null);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [isServiceModalOpen, setIsServiceModalOpen] = useState(false);
+  const categoryScrollRef = React.useRef<HTMLDivElement>(null);
+  const serviceScrollRef = React.useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to selected category when modal opens
+  useEffect(() => {
+    if (isCategoryModalOpen && selectedCategory) {
+      setTimeout(() => {
+        const selectedElement = categoryScrollRef.current?.querySelector('[data-selected="true"]');
+        selectedElement?.scrollIntoView({ behavior: 'auto', block: 'center' });
+      }, 100);
+    }
+  }, [isCategoryModalOpen, selectedCategory]);
+
+  // Auto-scroll to selected service when modal opens
+  useEffect(() => {
+    if (isServiceModalOpen && selectedServiceId) {
+      setTimeout(() => {
+        const selectedElement = serviceScrollRef.current?.querySelector('[data-selected="true"]');
+        selectedElement?.scrollIntoView({ behavior: 'auto', block: 'center' });
+      }, 100);
+    }
+  }, [isServiceModalOpen, selectedServiceId]);
 
   useEffect(() => {
     if (selectedCategory && serviceSelectRef.current) {
@@ -68,8 +95,12 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
   }, []);
 
   const categoryList = useMemo(() => {
-    const serviceCats = services.map(s => s.category);
-    return Array.from(new Set(serviceCats)).filter(cat => cat).sort();
+    const serviceCats = services.map(s => ({ 
+      name: s.category, 
+      icon: s.category_icon || getCategoryIcon(s.category) 
+    }));
+    const unique = Array.from(new Map(serviceCats.map(item => [item.name, item])).values());
+    return (unique as { name: string; icon: string }[]).filter(cat => cat.name).sort((a, b) => a.name.localeCompare(b.name));
   }, [services]);
 
   const filteredServices = useMemo(() => {
@@ -152,9 +183,18 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
 
         transaction.update(userRef, {
           walletBalance: currentBalance - totalCost,
+          totalSpent: (data.totalSpent || 0) + totalCost,
           // Keep balance field in sync if used elsewhere
           balance: currentBalance - totalCost
         });
+
+        // Update leaderboard
+        const leaderboardRef = doc(db, 'leaderboard', user.uid);
+        transaction.set(leaderboardRef, {
+          name: data.name || 'User',
+          totalSpent: (data.totalSpent || 0) + totalCost,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
       });
 
       // 2. Call SMM API via backend
@@ -264,7 +304,7 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
         <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300" />
         <input
           type="text"
-          placeholder="Search for a service..."
+          placeholder={t('search_placeholder')}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="w-full glass rounded-2xl py-4 pl-14 pr-5 focus:outline-none focus:ring-2 ring-cyan-100 transition-all shadow-sm"
@@ -274,24 +314,21 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
 
       {/* Category Selection */}
       <div className="space-y-2">
-        <label className="text-sm font-bold opacity-80 ml-1" style={{ color: 'var(--text-primary)' }}>Category</label>
-        <div className="relative">
-          <select
-            value={selectedCategory}
-            onChange={(e) => {
-              setSelectedCategory(e.target.value);
-              setSelectedServiceId('');
-            }}
-            className="w-full glass rounded-2xl py-4 px-5 appearance-none focus:outline-none focus:ring-2 ring-cyan-100 transition-all cursor-pointer font-medium shadow-sm"
-            style={{ color: 'var(--text-primary)' }}
-          >
-            <option value="">Select Category</option>
-            {categoryList.map((cat) => (
-              <option key={cat} value={cat}>{cat}</option>
-            ))}
-          </select>
-          <ChevronDown className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 w-5 h-5" />
-        </div>
+        <label className="text-sm font-bold opacity-80 ml-1" style={{ color: 'var(--text-primary)' }}>{t('category')}</label>
+        <button
+          onClick={() => setIsCategoryModalOpen(true)}
+          className="w-full glass rounded-2xl py-4 px-5 flex items-center justify-between focus:outline-none focus:ring-2 ring-cyan-100 transition-all cursor-pointer font-medium shadow-sm text-left"
+          style={{ color: 'var(--text-primary)' }}
+        >
+          <span className="truncate">
+            {selectedCategory ? (
+              <>
+                {categoryList.find(c => c.name === selectedCategory)?.icon} {selectedCategory}
+              </>
+            ) : t('select_category')}
+          </span>
+          <ChevronDown className="text-slate-400 w-5 h-5 shrink-0" />
+        </button>
       </div>
 
       {/* Service Selection */}
@@ -301,7 +338,7 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
         className="space-y-2"
       >
         <div className="flex items-center justify-between ml-1">
-          <label className="text-sm font-bold opacity-80" style={{ color: 'var(--text-primary)' }}>Service</label>
+          <label className="text-sm font-bold opacity-80" style={{ color: 'var(--text-primary)' }}>{t('service')}</label>
           {selectedCategory && !selectedServiceId && (
             <motion.span 
               animate={{ opacity: [0.4, 1, 0.4] }}
@@ -312,24 +349,133 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
             </motion.span>
           )}
         </div>
-        <div className="relative">
-          <select
-            value={selectedServiceId}
-            disabled={!selectedCategory}
-            onChange={(e) => setSelectedServiceId(e.target.value)}
-            className={`w-full glass rounded-2xl py-4 px-5 appearance-none focus:outline-none focus:ring-2 ring-cyan-100 transition-all font-medium shadow-sm ${!selectedCategory ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-            style={{ color: 'var(--text-primary)' }}
-          >
-            <option value="">{selectedCategory ? 'Choose a service...' : 'Select category first'}</option>
-            {filteredServices.map((service) => (
-              <option key={service.id} value={service.id}>
-                {service.emoji} {service.name} — ₹{service.pricePerUnit}
-              </option>
-            ))}
-          </select>
-          <ChevronDown className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 w-5 h-5" />
-        </div>
+        <button
+          disabled={!selectedCategory}
+          onClick={() => setIsServiceModalOpen(true)}
+          className={`w-full glass rounded-2xl py-4 px-5 flex items-center justify-between focus:outline-none focus:ring-2 ring-cyan-100 transition-all font-medium shadow-sm text-left ${!selectedCategory ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+          style={{ color: 'var(--text-primary)' }}
+        >
+          <span className="truncate">
+            {selectedServiceId ? (
+              <>
+                {selectedService?.emoji} {selectedService?.name} — ₹{selectedService?.pricePerUnit}
+              </>
+            ) : (selectedCategory ? t('select_service') : t('select_category'))}
+          </span>
+          <ChevronDown className="text-slate-400 w-5 h-5 shrink-0" />
+        </button>
       </motion.div>
+
+      {/* Custom Selection Modals */}
+      <AnimatePresence>
+        {isCategoryModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-6">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsCategoryModalOpen(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ y: '100%', opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: '100%', opacity: 0 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="relative w-[calc(100%-2rem)] max-w-lg glass rounded-[2.5rem] overflow-hidden flex flex-col max-h-[80vh] mb-8 sm:mb-0 backdrop-blur-2xl"
+              style={{ border: '1px solid var(--card-border)' }}
+            >
+              <div className="p-6 border-b border-white/10 flex items-center justify-between">
+                <h3 className="text-xl font-black tracking-tight" style={{ color: 'var(--text-primary)' }}>{t('select_category')}</h3>
+                <button onClick={() => setIsCategoryModalOpen(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+                  <X className="w-6 h-6" style={{ color: 'var(--text-primary)' }} />
+                </button>
+              </div>
+              <div ref={categoryScrollRef} className="overflow-y-auto p-4 pb-10 space-y-1">
+                {categoryList.map((cat, index) => (
+                  <React.Fragment key={cat.name}>
+                    <button
+                      data-selected={selectedCategory === cat.name}
+                      onClick={() => {
+                        setSelectedCategory(cat.name);
+                        setSelectedServiceId('');
+                        setIsCategoryModalOpen(false);
+                      }}
+                      className={`w-full py-3 px-5 rounded-2xl flex items-center justify-between transition-all ${selectedCategory === cat.name ? 'bg-cyan-500/20 border-cyan-500/50' : 'hover:bg-white/5 border-transparent'} border`}
+                    >
+                      <div className="flex items-center gap-4">
+                        <span className="text-xl">{cat.icon}</span>
+                        <span className="font-bold text-base" style={{ color: 'var(--text-primary)' }}>{cat.name}</span>
+                      </div>
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${selectedCategory === cat.name ? 'border-cyan-500 bg-cyan-500' : 'border-white/20'}`}>
+                        {selectedCategory === cat.name && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                      </div>
+                    </button>
+                    {index < categoryList.length - 1 && (
+                      <div className="h-px bg-white/5 mx-4 my-1" />
+                    )}
+                  </React.Fragment>
+                ))}
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {isServiceModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-6">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsServiceModalOpen(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ y: '100%', opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: '100%', opacity: 0 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="relative w-[calc(100%-2rem)] max-w-lg glass rounded-[2.5rem] overflow-hidden flex flex-col max-h-[80vh] mb-8 sm:mb-0 backdrop-blur-2xl"
+              style={{ border: '1px solid var(--card-border)' }}
+            >
+              <div className="p-6 border-b border-white/10 flex items-center justify-between">
+                <h3 className="text-xl font-black tracking-tight" style={{ color: 'var(--text-primary)' }}>{t('select_service')}</h3>
+                <button onClick={() => setIsServiceModalOpen(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+                  <X className="w-6 h-6" style={{ color: 'var(--text-primary)' }} />
+                </button>
+              </div>
+              <div ref={serviceScrollRef} className="overflow-y-auto p-4 pb-10 space-y-1">
+                {filteredServices.map((service, index) => (
+                  <React.Fragment key={service.id}>
+                    <button
+                      data-selected={selectedServiceId === service.id}
+                      onClick={() => {
+                        setSelectedServiceId(service.id);
+                        setIsServiceModalOpen(false);
+                      }}
+                      className={`w-full py-3 px-5 rounded-2xl flex items-center justify-between transition-all ${selectedServiceId === service.id ? 'bg-cyan-500/20 border-cyan-500/50' : 'hover:bg-white/5 border-transparent'} border`}
+                    >
+                      <div className="flex items-center gap-4 flex-1 text-left">
+                        <span className="text-xl shrink-0">{service.emoji}</span>
+                        <div className="flex flex-col">
+                          <span className="font-bold leading-tight text-sm" style={{ color: 'var(--text-primary)' }}>{service.name}</span>
+                          <span className="text-cyan-400 font-black text-[11px] mt-0.5">₹{service.pricePerUnit}</span>
+                        </div>
+                      </div>
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ml-4 ${selectedServiceId === service.id ? 'border-cyan-500 bg-cyan-500' : 'border-white/20'}`}>
+                        {selectedServiceId === service.id && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                      </div>
+                    </button>
+                    {index < filteredServices.length - 1 && (
+                      <div className="h-px bg-white/5 mx-4 my-1" />
+                    )}
+                  </React.Fragment>
+                ))}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Service Details Card */}
       <AnimatePresence mode="wait">
@@ -365,7 +511,7 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
 
       {/* Link Input */}
       <div ref={linkInputRef} className="space-y-2">
-        <label className="text-sm font-bold opacity-80 ml-1" style={{ color: 'var(--text-primary)' }}>Link</label>
+        <label className="text-sm font-bold opacity-80 ml-1" style={{ color: 'var(--text-primary)' }}>{t('link')}</label>
         <input
           type="url"
           placeholder="Enter Instagram Link"
@@ -378,7 +524,7 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
 
       {/* Quantity Input */}
       <div className="space-y-2">
-        <label className="text-sm font-bold opacity-80 ml-1" style={{ color: 'var(--text-primary)' }}>Quantity</label>
+        <label className="text-sm font-bold opacity-80 ml-1" style={{ color: 'var(--text-primary)' }}>{t('quantity')}</label>
         <input
           type="number"
           placeholder="Enter Quantity"
@@ -401,7 +547,7 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
             exit={{ opacity: 0, height: 0 }}
             className="space-y-2"
           >
-            <label className="text-sm font-bold opacity-80 ml-1" style={{ color: 'var(--text-primary)' }}>Average Time</label>
+            <label className="text-sm font-bold opacity-80 ml-1" style={{ color: 'var(--text-primary)' }}>{t('average_time')}</label>
             <div className="w-full glass rounded-2xl py-4 px-6 flex items-center gap-3 border border-cyan-500/10">
               <div className="w-8 h-8 rounded-xl bg-cyan-500/10 flex items-center justify-center">
                 <Clock className="w-4 h-4 text-cyan-400" />
@@ -409,10 +555,10 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
               <div>
                 <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
                   {selectedService.average_time === "0" || selectedService.average_time === "" 
-                    ? "Instant / Fast" 
+                    ? t('instant_fast') 
                     : selectedService.average_time}
                 </p>
-                <p className="text-[10px] opacity-40" style={{ color: 'var(--text-primary)' }}>Estimated completion time</p>
+                <p className="text-[10px] opacity-40" style={{ color: 'var(--text-primary)' }}>{t('estimated_completion')}</p>
               </div>
             </div>
           </motion.div>
@@ -421,7 +567,7 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
 
       {/* Charge Display */}
       <div className="space-y-2">
-        <label className="text-sm font-bold opacity-80 ml-1" style={{ color: 'var(--text-primary)' }}>Charge</label>
+        <label className="text-sm font-bold opacity-80 ml-1" style={{ color: 'var(--text-primary)' }}>{t('charge')}</label>
         <div className="w-full glass rounded-2xl py-4 px-6 font-bold text-xl text-cyan-400">
           ₹{totalCost.toFixed(2)}
         </div>
@@ -438,7 +584,7 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
         ) : (
           <>
             <Send className="w-5 h-5" />
-            Submit
+            {t('submit')}
           </>
         )}
       </button>

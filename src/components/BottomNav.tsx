@@ -1,6 +1,7 @@
 import React from 'react';
 import { Home, ClipboardList, Wallet, Bell, User } from 'lucide-react';
 import { motion } from 'motion/react';
+import { useTranslation } from '../contexts/LanguageContext';
 
 interface BottomNavProps {
   activeTab: string;
@@ -8,12 +9,13 @@ interface BottomNavProps {
 }
 
 const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab }) => {
+  const { t } = useTranslation();
   const tabs = [
-    { id: 'home', icon: Home, label: 'Home' },
-    { id: 'orders', icon: ClipboardList, label: 'Orders' },
-    { id: 'wallet', icon: Wallet, label: 'Wallet' },
-    { id: 'notifications', icon: Bell, label: 'Notifications' },
-    { id: 'profile', icon: User, label: 'Profile' },
+    { id: 'home', icon: Home, label: t('home') },
+    { id: 'orders', icon: ClipboardList, label: t('orders') },
+    { id: 'wallet', icon: Wallet, label: t('wallet_balance') },
+    { id: 'notifications', icon: Bell, label: t('notifications') },
+    { id: 'profile', icon: User, label: t('profile') },
   ];
 
   return (
