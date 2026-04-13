@@ -92,9 +92,33 @@
         "createdAt": { "type": "string", "format": "date-time" },
         "pinned": { "type": "boolean" }
       }
+    },
+    "User": {
+      "title": "User",
+      "description": "Represents a registered user in the system.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "walletBalance": { "type": "number" },
+        "totalSpent": { "type": "number" },
+        "selectedTheme": { "type": "string" },
+        "photoURL": { "type": "string", "format": "uri" },
+        "lastSpinAt": { "type": "string", "format": "date-time" },
+        "spinsToday": { "type": "number" },
+        "lastLoginAt": { "type": "string", "format": "date-time" },
+        "totalUsageTime": { "type": "number", "description": "Total usage time in minutes" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "email", "walletBalance", "createdAt"]
     }
   },
   "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Collection of user profiles."
+    },
     "/settings/spinner_config": {
       "schema": "SpinnerConfig",
       "description": "Global configuration for the spin wheel."

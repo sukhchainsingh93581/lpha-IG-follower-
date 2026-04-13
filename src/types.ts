@@ -9,6 +9,8 @@ export interface UserData {
   photoURL?: string;
   lastSpinAt?: any;
   spinsToday?: number;
+  lastLoginAt?: any;
+  totalUsageTime?: number; // in minutes
   createdAt: any;
 }
 

@@ -1,0 +1,8 @@
+name = "luxeservices-premium"
+pages_build_output_dir = "dist"
+
+[build]
+command = "npm run build"
+
+[vars]
+NODE_VERSION = "20"

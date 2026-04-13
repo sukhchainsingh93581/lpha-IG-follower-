@@ -38,7 +38,8 @@ import {
   Mail,
   User,
   Gift,
-  Disc
+  Disc,
+  History
 } from 'lucide-react';
 import { formatCurrency } from '../utils';
 import { getCategoryIcon } from '../utils/categoryIcons';
@@ -638,6 +639,28 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     } catch (error: any) {
       Swal.fire({ icon: 'error', title: 'Error', text: error.message });
     }
+  };
+
+  const formatUsageTime = (minutes: number = 0) => {
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    if (hours < 24) return `${hours}h ${remainingMinutes}m`;
+    const days = Math.floor(hours / 24);
+    const remainingHours = hours % 24;
+    return `${days}d ${remainingHours}h`;
+  };
+
+  const formatLastLogin = (timestamp: any) => {
+    if (!timestamp) return 'Never';
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    return date.toLocaleString('en-IN', { 
+      day: '2-digit', 
+      month: 'short', 
+      hour: '2-digit', 
+      minute: '2-digit',
+      hour12: true 
+    });
   };
 
   const handleUpdateUserBalance = async (userId: string, currentBalance: number) => {
@@ -2712,7 +2735,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                         </div>
                         <div className="text-right shrink-0 ml-4">
                           <p className="text-xl font-black text-slate-800">{formatCurrency(u.walletBalance || 0)}</p>
-                          <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Wallet Balance</p>
+                          <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-2">Wallet Balance</p>
+                          <div className="space-y-0.5">
+                            <p className="text-[10px] text-slate-400 font-bold flex items-center justify-end gap-1">
+                              <Clock className="w-2.5 h-2.5 opacity-60" />
+                              <span>Usage: {formatUsageTime(u.totalUsageTime)}</span>
+                            </p>
+                            <p className="text-[10px] text-slate-400 font-bold flex items-center justify-end gap-1">
+                              <History className="w-2.5 h-2.5 opacity-60" />
+                              <span>Last: {formatLastLogin(u.lastLoginAt)}</span>
+                            </p>
+                          </div>
                         </div>
                       </div>
 
