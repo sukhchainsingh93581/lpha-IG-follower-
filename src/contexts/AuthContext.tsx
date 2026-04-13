@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, getDoc, onSnapshot, updateDoc, setDoc, serverTimestamp, increment } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, updateDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, onValue, set } from 'firebase/database';
 import { auth, db, rtdb } from '../firebase';
 import { UserData } from '../types';
@@ -19,30 +19,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [userData, setUserData] = useState<UserData | null>(null);
   const [rtdbData, setRtdbData] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
-
-  // Activity Tracking
-  useEffect(() => {
-    if (!user) return;
-
-    const userDocRef = doc(db, 'users', user.uid);
-    
-    // 1. Update Last Login (once per session/mount)
-    updateDoc(userDocRef, {
-      lastLoginAt: serverTimestamp()
-    }).catch(err => console.error("Error updating lastLoginAt:", err));
-
-    // 2. Track Usage Time (increment every minute)
-    const usageInterval = setInterval(() => {
-      // Only increment if tab is visible to be more accurate
-      if (document.visibilityState === 'visible') {
-        updateDoc(userDocRef, {
-          totalUsageTime: increment(1)
-        }).catch(err => console.error("Error updating usage time:", err));
-      }
-    }, 60000); // Every 60 seconds
-
-    return () => clearInterval(usageInterval);
-  }, [user]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
