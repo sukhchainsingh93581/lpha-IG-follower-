@@ -96,6 +96,24 @@ const syncOrderStatuses = async () => {
     const apiKey = (configData?.smmApiKey || process.env.SMM_API_KEY || DEFAULT_API_KEY).trim();
     const apiUrl = (configData?.smmApiUrl || process.env.SMM_API_URL || DEFAULT_API_URL).trim();
 
+    const getSmmHeaders = (url: string) => {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+      };
+      
+      try {
+        const origin = new URL(url).origin;
+        headers["Origin"] = origin;
+        headers["Referer"] = origin + "/";
+      } catch (e) {
+        // Fallback if URL is invalid
+      }
+      return headers;
+    };
+
     for (const orderDoc of snapshot.docs) {
       const order = orderDoc.data();
       const apiOrderId = order.api_order_id;
@@ -110,10 +128,7 @@ const syncOrderStatuses = async () => {
 
         const response = await fetch(apiUrl, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "User-Agent": "SMM-Reseller-App/1.0"
-          },
+          headers: getSmmHeaders(apiUrl),
           body: params.toString(),
         });
 
@@ -198,6 +213,24 @@ async function startServer() {
     return fallbackConfig;
   };
 
+  const getSmmHeaders = (url: string) => {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Accept": "application/json, text/plain, */*",
+      "Accept-Language": "en-US,en;q=0.9",
+    };
+    
+    try {
+      const origin = new URL(url).origin;
+      headers["Origin"] = origin;
+      headers["Referer"] = origin + "/";
+    } catch (e) {
+      // Fallback if URL is invalid
+    }
+    return headers;
+  };
+
   // API Routes
   app.get("/api/services", async (req, res) => {
     const { apiKey, apiUrl } = await getSmmConfig();
@@ -212,10 +245,7 @@ async function startServer() {
       console.log(`[API] Fetching services from: ${apiUrl}`);
       const response = await fetch(apiUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "User-Agent": "SMM-Reseller-App/1.0"
-        },
+        headers: getSmmHeaders(apiUrl),
         body: params.toString(),
       });
       
@@ -268,10 +298,7 @@ async function startServer() {
       console.log(`[API] Placing order to: ${apiUrl}`);
       const response = await fetch(apiUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "User-Agent": "SMM-Reseller-App/1.0"
-        },
+        headers: getSmmHeaders(apiUrl),
         body: params.toString(),
       });
 
@@ -319,10 +346,7 @@ async function startServer() {
 
       const response = await fetch(apiUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "User-Agent": "SMM-Reseller-App/1.0"
-        },
+        headers: getSmmHeaders(apiUrl),
         body: params.toString(),
       });
 
@@ -366,10 +390,7 @@ async function startServer() {
       console.log(`[API] Sending refill request for order: ${orderId} to: ${apiUrl}`);
       const response = await fetch(apiUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "User-Agent": "SMM-Reseller-App/1.0"
-        },
+        headers: getSmmHeaders(apiUrl),
         body: params.toString(),
       });
 
@@ -406,10 +427,7 @@ async function startServer() {
 
       const response = await fetch(apiUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "User-Agent": "SMM-Reseller-App/1.0"
-        },
+        headers: getSmmHeaders(apiUrl),
         body: params.toString(),
       });
 
