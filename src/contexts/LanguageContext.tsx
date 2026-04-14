@@ -19,15 +19,12 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    // Listen for global app config for default language and force setting
+    // Listen for global app config for default language
     const unsubscribeConfig = onSnapshot(doc(db, 'settings', 'app_config'), (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data();
         if (data.defaultLanguage) {
           setDefaultLanguage(data.defaultLanguage);
-        }
-        if (data.forceGlobalLanguage && data.defaultLanguage) {
-          setLanguageState(data.defaultLanguage);
         }
       }
     });
@@ -42,35 +39,20 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           if (snapshot.exists()) {
             const userData = snapshot.data();
             
-            // Check if admin is forcing a language
-            const checkForce = async () => {
-              const configSnap = await getDoc(doc(db, 'settings', 'app_config'));
-              if (configSnap.exists()) {
-                const configData = configSnap.data();
-                
-                // If user is admin, force English
-                if (userData.role === 'admin') {
-                  setLanguageState('en');
-                } else if (configData.forceGlobalLanguage && configData.defaultLanguage) {
-                  setLanguageState(configData.defaultLanguage);
-                } else if (userData.language) {
-                  setLanguageState(userData.language);
-                } else {
-                  setLanguageState(defaultLanguage);
-                }
+            // Check user language preference
+            const checkLanguage = async () => {
+              // If user is admin, force English
+              if (userData.role === 'admin') {
+                setLanguageState('en');
+              } else if (userData.language) {
+                setLanguageState(userData.language);
               } else {
-                if (userData.role === 'admin') {
-                  setLanguageState('en');
-                } else if (userData.language) {
-                  setLanguageState(userData.language);
-                } else {
-                  setLanguageState(defaultLanguage);
-                }
+                setLanguageState(defaultLanguage);
               }
               setIsReady(true);
             };
             
-            checkForce();
+            checkLanguage();
           } else {
             setLanguageState(defaultLanguage);
             setIsReady(true);

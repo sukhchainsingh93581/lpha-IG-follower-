@@ -92,9 +92,22 @@
         "createdAt": { "type": "string", "format": "date-time" },
         "pinned": { "type": "boolean" }
       }
+    },
+    "AdminConfig": {
+      "title": "Admin Config",
+      "description": "Sensitive configuration for admin access.",
+      "type": "object",
+      "properties": {
+        "adminPassword": { "type": "string", "description": "Password to access the admin panel" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
     }
   },
   "firestore": {
+    "/settings/admin_config": {
+      "schema": "AdminConfig",
+      "description": "Sensitive admin settings."
+    },
     "/settings/spinner_config": {
       "schema": "SpinnerConfig",
       "description": "Global configuration for the spin wheel."

@@ -63,6 +63,8 @@ export interface Order {
   price?: number; // For backward compatibility
   status: 'Pending' | 'Processing' | 'Completed' | 'Cancelled' | 'Approved' | 'Rejected';
   isGiveaway?: boolean;
+  lastRefillAt?: any;
+  refillCount?: number;
   createdAt: any;
 }
 

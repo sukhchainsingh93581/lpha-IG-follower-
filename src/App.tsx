@@ -32,6 +32,7 @@ const AppContent = () => {
   const [appName, setAppName] = useState('InstaBoost');
   const [appNameStyling, setAppNameStyling] = useState<any>(null);
   const [isMaintenanceMode, setIsMaintenanceMode] = useState(false);
+  const [adminPassword, setAdminPassword] = useState('Admin93581');
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -39,6 +40,19 @@ const AppContent = () => {
     if (refCode) {
       localStorage.setItem('pending_referral_code', refCode);
     }
+  }, []);
+
+  useEffect(() => {
+    // Fetch admin password from Firestore
+    const unsubAdminConfig = onSnapshot(doc(db, 'settings', 'admin_config'), (doc) => {
+      if (doc.exists()) {
+        const data = doc.data();
+        setAdminPassword(data.adminPassword || 'Admin93581');
+      } else {
+        setAdminPassword('Admin93581');
+      }
+    });
+    return () => unsubAdminConfig();
   }, []);
 
   useEffect(() => {
@@ -134,7 +148,7 @@ const AppContent = () => {
       confirmButtonColor: '#06b6d4',
     });
 
-    if (password === 'Admin93581') {
+    if (password === adminPassword) {
       setIsAdminView(true);
     } else if (password) {
       Swal.fire({

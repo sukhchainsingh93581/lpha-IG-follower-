@@ -89,20 +89,6 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onAdminAccess, onReferAccess,
   };
 
   const handleLanguageChange = async (langCode: string) => {
-    if (appConfig?.forceGlobalLanguage) {
-      Swal.fire({
-        title: t('admin_forced'),
-        icon: 'info',
-        toast: true,
-        position: 'top-end',
-        showConfirmButton: false,
-        timer: 3000,
-        background: 'var(--card-bg)',
-        color: 'var(--text-primary)'
-      });
-      return;
-    }
-
     try {
       if (user) {
         await updateDoc(doc(db, 'users', user.uid), {
@@ -497,38 +483,24 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onAdminAccess, onReferAccess,
                 </div>
 
                 {/* Language Selection */}
-                {!appConfig?.forceGlobalLanguage && (
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black opacity-40 uppercase tracking-widest ml-1">{t('language')}</label>
-                    <div className="relative">
-                      <Globe className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 opacity-40" />
-                      <select
-                        className="w-full bg-white/10 border border-white/10 rounded-2xl py-3 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold appearance-none"
-                        value={formData.language}
-                        onChange={(e) => setFormData({ ...formData, language: e.target.value })}
-                      >
-                        {languages.map(lang => (
-                          <option key={lang.code} value={lang.code} className="bg-slate-900 text-white">
-                            {lang.name} ({lang.nativeName})
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 opacity-40 rotate-90 pointer-events-none" />
-                    </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black opacity-40 uppercase tracking-widest ml-1">{t('language')}</label>
+                  <div className="relative">
+                    <Globe className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 opacity-40" />
+                    <select
+                      className="w-full bg-white/10 border border-white/10 rounded-2xl py-3 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold appearance-none"
+                      value={formData.language}
+                      onChange={(e) => setFormData({ ...formData, language: e.target.value })}
+                    >
+                      {languages.map(lang => (
+                        <option key={lang.code} value={lang.code} className="bg-slate-900 text-white">
+                          {lang.name} ({lang.nativeName})
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 opacity-40 rotate-90 pointer-events-none" />
                   </div>
-                )}
-
-                {appConfig?.forceGlobalLanguage && (
-                  <div className="space-y-1.5 opacity-50">
-                    <label className="text-[10px] font-black opacity-40 uppercase tracking-widest ml-1">{t('language')}</label>
-                    <div className="relative">
-                      <Globe className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 opacity-40" />
-                      <div className="w-full bg-white/10 border border-white/10 rounded-2xl py-3 pl-12 pr-4 font-bold">
-                        {languages.find(l => l.code === appConfig.defaultLanguage)?.name || 'English'} ({t('admin_forced')})
-                      </div>
-                    </div>
-                  </div>
-                )}
+                </div>
 
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">

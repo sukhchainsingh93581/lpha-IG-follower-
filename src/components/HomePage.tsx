@@ -211,11 +211,11 @@ const HomePage = ({ onOrderSuccess }: { onOrderSuccess?: () => void }) => {
         });
 
         if (!apiResponse.ok) {
-          const errorData = await apiResponse.json().catch(() => ({}));
+          const errorData = await apiResponse.json().catch(() => ({ error: `Server error: ${apiResponse.status}` }));
           throw new Error(errorData.error || `SMM API error: ${apiResponse.status}`);
         }
 
-        apiData = await apiResponse.json();
+        apiData = await apiResponse.json().catch(() => ({ error: 'Invalid response from server' }));
 
         if (apiData.error || !apiData.order) {
           throw new Error(apiData.error || 'Failed to place order on SMM API');

@@ -38,7 +38,8 @@ import {
   Mail,
   User,
   Gift,
-  Disc
+  Disc,
+  Lock
 } from 'lucide-react';
 import { formatCurrency } from '../utils';
 import { getCategoryIcon } from '../utils/categoryIcons';
@@ -51,7 +52,7 @@ interface AdminPanelProps {
   onBack: () => void;
 }
 
-type AdminView = 'dashboard' | 'services' | 'app_management' | 'orders' | 'payments' | 'notifications' | 'user_management' | 'security_monitor' | 'referral_management' | 'daily_giveaway' | 'spinner_management';
+type AdminView = 'dashboard' | 'services' | 'app_management' | 'orders' | 'payments' | 'notifications' | 'user_management' | 'security_monitor' | 'referral_management' | 'daily_giveaway' | 'spinner_management' | 'password_management';
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   const { t: contextT } = useTranslation();
@@ -205,6 +206,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   const [savingConfig, setSavingConfig] = useState(false);
   const [showStylingOptions, setShowStylingOptions] = useState(true);
 
+  // Admin Config (Password & Firebase)
+  const [adminConfig, setAdminConfig] = useState({
+    adminPassword: 'Admin93581'
+  });
+  const [passwordForm, setPasswordForm] = useState({
+    oldPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
+  const [savingAdminConfig, setSavingAdminConfig] = useState(false);
+
   // Service Form State
   const [showServiceModal, setShowServiceModal] = useState(false);
   const [editingService, setEditingService] = useState<any>(null);
@@ -258,11 +270,30 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
       setAdminNotifications(notificationsData);
     });
 
-    // Real-time Orders & Revenue
-    const unsubscribeOrders = onSnapshot(collection(db, 'orders'), (snapshot) => {
-      const orders = snapshot.docs.map(doc => doc.data());
+    // Consolidated Orders Listener (Stats, All Orders, Recent Orders)
+    const qAllOrders = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
+    const unsubscribeAllOrders = onSnapshot(qAllOrders, (snapshot) => {
+      const orders = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as any[];
+      
+      setAllOrders(orders);
+      setRecentOrders(orders.slice(0, 5));
+      
       const revenue = orders.reduce((acc, order: any) => acc + (order.totalCost || 0), 0);
-      setStats(prev => ({ ...prev, totalOrders: snapshot.size, totalRevenue: revenue }));
+      setStats(prev => ({ 
+        ...prev, 
+        totalOrders: snapshot.size, 
+        totalRevenue: revenue 
+      }));
+      
+      setLoading(false);
+    }, (error: any) => {
+      console.error("Error listening to all orders:", error);
+      if (error.message?.includes('quota')) {
+        console.warn("Firestore Quota Exceeded");
+      }
     });
 
     // Real-time Services
@@ -275,32 +306,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
       setStats(prev => ({ ...prev, totalServices: snapshot.size }));
     });
 
-
     // App Config
     const unsubscribeConfig = onSnapshot(doc(db, 'settings', 'app_config'), (snapshot) => {
       if (snapshot.exists()) {
         setAppConfig(snapshot.data() as any);
       }
-    });
-
-    // All Orders for Management
-    const unsubscribeAllOrders = onSnapshot(collection(db, 'orders'), (snapshot) => {
-      const orders = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setAllOrders(orders);
-    });
-
-    // Recent Orders (Last 5)
-    const qRecent = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(5));
-    const unsubscribeRecent = onSnapshot(qRecent, (snapshot) => {
-      const orders = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setRecentOrders(orders);
-      setLoading(false);
     });
 
     // Real-time Fund Requests
@@ -412,14 +422,25 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
       setSpinnerLogs(logs);
     });
 
+    // Admin Config
+    const unsubscribeAdminConfig = onSnapshot(doc(db, 'settings', 'admin_config'), (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        setAdminConfig({
+          adminPassword: data.adminPassword || 'Admin93581',
+          ...data
+        });
+      } else {
+        setAdminConfig({ adminPassword: 'Admin93581' });
+      }
+    });
+
       return () => {
         unsubscribeUsersList();
         unsubscribeNotifications();
-        unsubscribeOrders();
+        unsubscribeAllOrders();
         unsubscribeServices();
         unsubscribeConfig();
-        unsubscribeAllOrders();
-        unsubscribeRecent();
         unsubscribeFunds();
         unsubscribeSecurity();
         unsubscribePinned();
@@ -431,6 +452,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
         unsubscribeParticipants();
         unsubscribeSpinnerConfig();
         unsubscribeSpinnerLogs();
+        unsubscribeAdminConfig();
       };
   }, []);
 
@@ -637,6 +659,33 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
       Swal.fire({ icon: 'success', title: 'Notification Deleted', toast: true, position: 'top-end', showConfirmButton: false, timer: 2000 });
     } catch (error: any) {
       Swal.fire({ icon: 'error', title: 'Error', text: error.message });
+    }
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      Swal.fire({ icon: 'error', title: 'Error', text: 'New passwords do not match!' });
+      return;
+    }
+
+    if (passwordForm.oldPassword !== adminConfig.adminPassword) {
+      Swal.fire({ icon: 'error', title: 'Error', text: 'Incorrect old password!' });
+      return;
+    }
+
+    setSavingAdminConfig(true);
+    try {
+      await setDoc(doc(db, 'settings', 'admin_config'), {
+        adminPassword: passwordForm.newPassword,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      setPasswordForm({ oldPassword: '', newPassword: '', confirmPassword: '' });
+      Swal.fire({ icon: 'success', title: 'Password Changed Successfully', toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 });
+    } catch (error: any) {
+      Swal.fire({ icon: 'error', title: 'Error', text: error.message });
+    } finally {
+      setSavingAdminConfig(false);
     }
   };
 
@@ -996,6 +1045,59 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   };
 
 
+  const handleSyncStatuses = async () => {
+    const activeOrders = allOrders.filter(o => o.status === 'Pending' || o.status === 'Processing');
+    if (activeOrders.length === 0) {
+      Swal.fire({ icon: 'info', title: 'No active orders to sync.' });
+      return;
+    }
+
+    Swal.fire({
+      title: 'Syncing Statuses...',
+      text: `Syncing ${activeOrders.length} orders with SMM API.`,
+      allowOutsideClick: false,
+      didOpen: () => {
+        Swal.showLoading();
+      }
+    });
+
+    let updatedCount = 0;
+    try {
+      for (const order of activeOrders) {
+        if (!order.api_order_id) continue;
+        const response = await fetch(`/api/order-status/${order.api_order_id}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.status) {
+            let apiStatus = String(data.status).toLowerCase();
+            let newStatus = order.status;
+
+            if (apiStatus.includes('pending')) {
+              newStatus = 'Pending';
+            } else if (apiStatus.includes('processing') || apiStatus.includes('progress') || apiStatus.includes('active')) {
+              newStatus = 'Processing';
+            } else if (apiStatus.includes('completed') || apiStatus.includes('success') || apiStatus.includes('done') || apiStatus.includes('finish')) {
+              newStatus = 'Completed';
+            } else if (apiStatus.includes('cancel') || apiStatus.includes('partial') || apiStatus.includes('refund') || apiStatus.includes('fail')) {
+              newStatus = 'Cancelled';
+            }
+
+            if (newStatus !== order.status) {
+              await updateDoc(doc(db, 'orders', order.id), {
+                status: newStatus,
+                updatedAt: serverTimestamp()
+              });
+              updatedCount++;
+            }
+          }
+        }
+      }
+      Swal.fire({ icon: 'success', title: 'Sync Complete', text: `${updatedCount} orders updated.` });
+    } catch (error: any) {
+      Swal.fire({ icon: 'error', title: 'Sync Failed', text: error.message });
+    }
+  };
+
   const handleSyncServices = async () => {
     const result = await Swal.fire({
       title: 'Sync Services?',
@@ -1008,10 +1110,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
         try {
           const response = await fetch('/api/services');
           if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
+            const errorData = await response.json().catch(() => ({ error: `Server error: ${response.status}` }));
             throw new Error(errorData.error || `Server error: ${response.status}`);
           }
-          const apiServices = await response.json();
+          const apiServices = await response.json().catch(() => ({ error: 'Invalid JSON response from server' }));
           
           if (Array.isArray(apiServices)) {
             // Sync Categories
@@ -1106,13 +1208,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     setCheckingBalance(true);
     try {
       const response = await fetch('/api/balance');
-      const data = await response.json();
+      const data = await response.json().catch(() => ({ error: 'Invalid response from server' }));
+      
       if (data.balance) {
         setSmmBalance(data.balance + ' ' + (data.currency || 'USD'));
       } else if (data.error) {
-        Swal.fire({ icon: 'error', title: 'Error', text: data.error });
+        Swal.fire({ 
+          icon: 'error', 
+          title: 'API Error', 
+          text: data.error,
+          footer: 'Check your API Key and disable IP Restriction in SMM Panel settings.'
+        });
       } else {
-        Swal.fire({ icon: 'error', title: 'Error', text: 'Could not fetch balance.' });
+        Swal.fire({ icon: 'error', title: 'Error', text: 'Could not fetch balance. Check your API settings.' });
       }
     } catch (error: any) {
       Swal.fire({ icon: 'error', title: 'Error', text: error.message });
@@ -1569,6 +1677,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
               </button>
 
               <button
+                onClick={() => { setView('password_management'); setIsSidebarOpen(false); }}
+                className={`w-full flex items-center gap-4 p-4 rounded-2xl font-bold transition-all ${
+                  view === 'password_management' ? 'bg-cyan-50 text-cyan-600' : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                <Lock className="w-5 h-5" />
+                Admin Pass
+              </button>
+
+              <button
                 onClick={() => { setView('referral_management'); setIsSidebarOpen(false); }}
                 className={`w-full flex items-center gap-4 p-4 rounded-2xl font-bold transition-all ${
                   view === 'referral_management' ? 'bg-cyan-50 text-cyan-600' : 'text-slate-500 hover:bg-slate-50'
@@ -1620,6 +1738,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
               {view === 'dashboard' ? 'Dashboard' : 
                view === 'services' ? 'Services' : 
                view === 'app_management' ? 'App Management' : 
+               view === 'password_management' ? 'Admin Pass' :
                view === 'orders' ? 'Order Management' :
                view === 'payments' ? 'Payment Management' :
                view === 'notifications' ? 'Notifications' :
@@ -2203,6 +2322,72 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
           </div>
         )}
 
+        {view === 'password_management' && (
+          <div className="space-y-6">
+            <h2 className="text-2xl font-black text-slate-800 tracking-tight">Admin Pass</h2>
+            
+            <div className="max-w-2xl">
+              {/* Change Admin Password */}
+              <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-6">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-10 h-10 bg-cyan-50 rounded-xl flex items-center justify-center">
+                    <Lock className="w-5 h-5 text-cyan-500" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-slate-800">Change Admin Password</h3>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Update access password</p>
+                  </div>
+                </div>
+
+                <form onSubmit={handleChangePassword} className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Old Password</label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="Enter old password"
+                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700"
+                      value={passwordForm.oldPassword}
+                      onChange={(e) => setPasswordForm({ ...passwordForm, oldPassword: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">New Password</label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="Enter new password"
+                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700"
+                      value={passwordForm.newPassword}
+                      onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Confirm New Password</label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="Confirm new password"
+                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700"
+                      value={passwordForm.confirmPassword}
+                      onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={savingAdminConfig}
+                    className="w-full bg-cyan-500 text-white py-4 rounded-2xl font-black text-sm shadow-lg shadow-cyan-200 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {savingAdminConfig ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                    Change Password
+                  </button>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
+
         {view === 'orders' && (
           <div className="space-y-6">
             <div className="flex flex-col gap-4">
@@ -2222,6 +2407,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                     History
                   </button>
                 </div>
+                <button
+                  onClick={handleSyncStatuses}
+                  className="flex items-center gap-2 px-6 py-2 bg-cyan-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-cyan-100 hover:scale-[1.02] active:scale-[0.98] transition-all"
+                >
+                  <RefreshCcw className="w-4 h-4" />
+                  Sync Statuses
+                </button>
               </div>
 
               {/* Order Search Bar */}

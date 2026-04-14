@@ -141,6 +141,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /settings/admin_config {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
     match /settings/{settingId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
