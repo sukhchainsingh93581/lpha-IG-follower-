@@ -30,6 +30,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onAdminAccess, onReferAccess,
   const [showFontSelector, setShowFontSelector] = useState(false);
   const [showLanguageModal, setShowLanguageModal] = useState(false);
   const [appConfig, setAppConfig] = useState<any>(null);
+  const [adminPassword, setAdminPassword] = useState('Admin93581');
   const [formData, setFormData] = useState({
     name: '',
     photoURL: '',
@@ -43,7 +44,17 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onAdminAccess, onReferAccess,
         setAppConfig(doc.data());
       }
     });
-    return () => unsub();
+
+    const unsubAdmin = onSnapshot(doc(db, 'settings', 'admin_config'), (doc) => {
+      if (doc.exists()) {
+        setAdminPassword(doc.data().adminPassword || 'Admin93581');
+      }
+    });
+
+    return () => {
+      unsub();
+      unsubAdmin();
+    };
   }, []);
 
   // Sync with userData when it changes
@@ -75,7 +86,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onAdminAccess, onReferAccess,
       cancelButtonColor: 'rgba(255,255,255,0.1)'
     });
 
-    if (password === 'Admin93581') {
+    if (password === adminPassword) {
       onAdminAccess?.();
     } else if (password) {
       Swal.fire({
@@ -342,23 +353,25 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ onAdminAccess, onReferAccess,
             <ChevronRight className="w-6 h-6 opacity-20 group-hover:opacity-60 transition-colors" style={{ color: 'var(--text-primary)' }} />
           </button>
 
-          <button
-            onClick={() => setShowLanguageModal(true)}
-            className="w-full glass rounded-3xl p-6 flex items-center justify-between premium-shadow hover:bg-white/5 transition-all group"
-          >
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center border border-white/10">
-                <Globe className="w-6 h-6 opacity-80" style={{ color: 'var(--text-primary)' }} />
+          {appConfig?.showLanguageSettings !== false && (
+            <button
+              onClick={() => setShowLanguageModal(true)}
+              className="w-full glass rounded-3xl p-6 flex items-center justify-between premium-shadow hover:bg-white/5 transition-all group"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center border border-white/10">
+                  <Globe className="w-6 h-6 opacity-80" style={{ color: 'var(--text-primary)' }} />
+                </div>
+                <div className="text-left">
+                  <p className="text-[10px] opacity-40 uppercase tracking-widest mb-0.5" style={{ color: 'var(--text-primary)' }}>{t('language')}</p>
+                  <span className="font-bold text-lg" style={{ color: 'var(--text-primary)' }}>
+                    {languages.find(l => l.code === language)?.name || 'English'}
+                  </span>
+                </div>
               </div>
-              <div className="text-left">
-                <p className="text-[10px] opacity-40 uppercase tracking-widest mb-0.5" style={{ color: 'var(--text-primary)' }}>{t('language')}</p>
-                <span className="font-bold text-lg" style={{ color: 'var(--text-primary)' }}>
-                  {languages.find(l => l.code === language)?.name || 'English'}
-                </span>
-              </div>
-            </div>
-            <ChevronRight className="w-6 h-6 opacity-20 group-hover:opacity-60 transition-colors" style={{ color: 'var(--text-primary)' }} />
-          </button>
+              <ChevronRight className="w-6 h-6 opacity-20 group-hover:opacity-60 transition-colors" style={{ color: 'var(--text-primary)' }} />
+            </button>
+          )}
         </div>
       </div>
 

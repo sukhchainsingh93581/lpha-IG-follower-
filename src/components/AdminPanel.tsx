@@ -117,6 +117,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   const [categories, setCategories] = useState<any[]>([]);
   const [smmBalance, setSmmBalance] = useState<string | null>(null);
   const [checkingBalance, setCheckingBalance] = useState(false);
+  const [catSearch, setCatSearch] = useState('');
+  const [svcSearch, setSvcSearch] = useState('');
 
   // Update current time every second for the countdown timers
   useEffect(() => {
@@ -2200,20 +2202,38 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest ml-1">This percentage will be added to the base SMM API price.</p>
               </div>
 
-              <div className="flex items-center justify-between p-6 bg-slate-50 rounded-3xl border border-slate-100">
-                <div className="space-y-1">
-                  <h3 className="font-black text-slate-800">Maintenance Mode</h3>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-                    {appConfig.isMaintenanceMode ? 'App is currently locked' : 'App is currently active'}
-                  </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="flex items-center justify-between p-6 bg-slate-50 rounded-3xl border border-slate-100">
+                  <div className="space-y-1">
+                    <h3 className="font-black text-slate-800">Show Language</h3>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                      {appConfig.showLanguageSettings ? 'Visible in Profile' : 'Hidden in Profile'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAppConfig({ ...appConfig, showLanguageSettings: !appConfig.showLanguageSettings })}
+                    className={`w-14 h-8 rounded-full relative transition-colors ${appConfig.showLanguageSettings ? 'bg-cyan-500' : 'bg-slate-200'}`}
+                  >
+                    <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all ${appConfig.showLanguageSettings ? 'left-7' : 'left-1'}`} />
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setAppConfig({ ...appConfig, isMaintenanceMode: !appConfig.isMaintenanceMode })}
-                  className={`w-14 h-8 rounded-full relative transition-colors ${appConfig.isMaintenanceMode ? 'bg-rose-500' : 'bg-slate-200'}`}
-                >
-                  <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all ${appConfig.isMaintenanceMode ? 'left-7' : 'left-1'}`} />
-                </button>
+
+                <div className="flex items-center justify-between p-6 bg-slate-50 rounded-3xl border border-slate-100">
+                  <div className="space-y-1">
+                    <h3 className="font-black text-slate-800">Maintenance Mode</h3>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                      {appConfig.isMaintenanceMode ? 'App is currently locked' : 'App is currently active'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAppConfig({ ...appConfig, isMaintenanceMode: !appConfig.isMaintenanceMode })}
+                    className={`w-14 h-8 rounded-full relative transition-colors ${appConfig.isMaintenanceMode ? 'bg-rose-500' : 'bg-slate-200'}`}
+                  >
+                    <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all ${appConfig.isMaintenanceMode ? 'left-7' : 'left-1'}`} />
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-1.5">
@@ -2286,6 +2306,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                     value={appConfig.smmApiUrl || ''}
                     onChange={(e) => setAppConfig({ ...appConfig, smmApiUrl: e.target.value })}
                   />
+                  <p className="text-[9px] text-rose-400 font-bold uppercase tracking-widest ml-1">
+                    Note: If you get a 403 Forbidden error on Railway/Render, disable "IP Restriction" in your SMM Panel settings.
+                  </p>
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">SMM API Key</label>
@@ -3553,31 +3576,60 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
               <form onSubmit={handleSaveGiveaway} className="space-y-6 max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Select Category</label>
+                  <div className="relative">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search category..."
+                      className="w-full bg-slate-50 border border-slate-100 rounded-t-2xl py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700 text-sm"
+                      value={catSearch}
+                      onChange={(e) => setCatSearch(e.target.value)}
+                    />
+                  </div>
                   <select
                     required
-                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700"
+                    className="w-full bg-slate-50 border border-slate-100 rounded-b-2xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700"
                     value={giveawayForm.category}
-                    onChange={(e) => setGiveawayForm({ ...giveawayForm, category: e.target.value, serviceId: '' })}
+                    onChange={(e) => {
+                      setGiveawayForm({ ...giveawayForm, category: e.target.value, serviceId: '' });
+                      setSvcSearch('');
+                    }}
                   >
                     <option value="">Choose a category...</option>
-                    {categories.map(cat => (
-                      <option key={cat.id} value={cat.name}>{cat.name}</option>
-                    ))}
+                    {(categories.length > 0 ? categories : [...new Set(services.map(s => s.category))].map(name => ({ id: name, name })))
+                      .filter(cat => cat.name.toLowerCase().includes(catSearch.toLowerCase()))
+                      .sort((a, b) => a.name.localeCompare(b.name))
+                      .map(cat => (
+                        <option key={cat.id} value={cat.name}>{cat.name}</option>
+                      ))
+                    }
                   </select>
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Select Service</label>
+                  <div className="relative">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      disabled={!giveawayForm.category}
+                      placeholder="Search service..."
+                      className="w-full bg-slate-50 border border-slate-100 rounded-t-2xl py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700 text-sm disabled:opacity-50"
+                      value={svcSearch}
+                      onChange={(e) => setSvcSearch(e.target.value)}
+                    />
+                  </div>
                   <select
                     required
                     disabled={!giveawayForm.category}
-                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700 disabled:opacity-50"
+                    className="w-full bg-slate-50 border border-slate-100 rounded-b-2xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 font-bold text-slate-700 disabled:opacity-50"
                     value={giveawayForm.serviceId}
                     onChange={(e) => setGiveawayForm({ ...giveawayForm, serviceId: e.target.value })}
                   >
                     <option value="">Choose a service...</option>
                     {services
-                      .filter(s => s.category === giveawayForm.category)
+                      .filter(s => s.category === giveawayForm.category && s.name.toLowerCase().includes(svcSearch.toLowerCase()))
+                      .sort((a, b) => a.name.localeCompare(b.name))
                       .map(service => (
                         <option key={service.id} value={service.id}>{service.name}</option>
                       ))
